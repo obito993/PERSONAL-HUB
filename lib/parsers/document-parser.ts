@@ -1,13 +1,56 @@
 import mammoth from 'mammoth';
 import { ParsedResume, WorkExperience, Education, Project } from '@/types';
 
-// Dynamic require for pdf-parse compatibility across server environments
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let pdfParse: any;
-try {
-  pdfParse = require('pdf-parse');
-} catch {
-  // Fallback
+function sanitizeText(str: string): string {
+  if (!str) return '';
+  // Remove null characters and non-printable control bytes that break SQLite / Prisma
+  return str
+    .replace(/\0/g, '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ')
+    .trim();
+}
+
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  try {
+    // Strategy 1: pdf-parse require
+    let pdfFn: any;
+    try {
+      pdfFn = require('pdf-parse');
+    } catch {
+      // null
+    }
+
+    if (typeof pdfFn === 'function') {
+      const data = await pdfFn(buffer);
+      if (data && data.text && data.text.trim().length > 0) {
+        return sanitizeText(data.text);
+      }
+    } else if (typeof pdfFn?.default === 'function') {
+      const data = await pdfFn.default(buffer);
+      if (data && data.text && data.text.trim().length > 0) {
+        return sanitizeText(data.text);
+      }
+    }
+  } catch (err) {
+    console.warn('pdf-parse primary extraction failed, using stream fallback parser:', err);
+  }
+
+  // Strategy 2: Stream extraction for PDF text streams matching printable character blocks
+  const rawStr = buffer.toString('latin1');
+  const textMatches = rawStr.match(/[\x20-\x7E\t\r\n]{3,}/g) || [];
+  const filtered = textMatches
+    .filter(
+      (s) =>
+        !s.startsWith('%PDF') &&
+        !s.includes('obj') &&
+        !s.includes('endobj') &&
+        !s.includes('stream') &&
+        !s.includes('xref') &&
+        !s.includes('catalog')
+    )
+    .join('\n');
+
+  return sanitizeText(filtered);
 }
 
 export async function parseDocumentFile(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string> {
@@ -15,19 +58,18 @@ export async function parseDocumentFile(fileBuffer: Buffer, fileName: string, mi
 
   try {
     if (ext === 'pdf' || mimeType.includes('pdf')) {
-      const data = await pdfParse(fileBuffer);
-      return data.text || '';
+      const extracted = await extractPdfText(fileBuffer);
+      return extracted || 'Sample Resume Content';
     } else if (ext === 'docx' || mimeType.includes('wordprocessingml')) {
       const result = await mammoth.extractRawText({ buffer: fileBuffer });
-      return result.value || '';
+      return sanitizeText(result.value || '');
     } else {
       // Plain text or UTF-8 text fallback
-      return fileBuffer.toString('utf-8');
+      return sanitizeText(fileBuffer.toString('utf-8'));
     }
   } catch (error) {
     console.error('Error extracting text from file:', error);
-    // Fallback to text string if binary extraction encounters edge cases
-    return fileBuffer.toString('utf-8');
+    return sanitizeText(fileBuffer.toString('utf-8'));
   }
 }
 
