@@ -1,0 +1,104 @@
+// Prisma Schema for ResumeForge AI
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String           @id @default(uuid())
+  name           String
+  email          String           @unique
+  password       String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  resumes        Resume[]
+  jobDescriptions JobDescription[]
+  analyses       ResumeAnalysis[]
+  tailoredResumes TailoredResume[]
+}
+
+model Resume {
+  id             String           @id @default(uuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  originalFile   String?
+  extractedText  String
+  structuredData String           // JSON string of ParsedResume
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  analyses       ResumeAnalysis[]
+  tailoredResumes TailoredResume[]
+}
+
+model JobDescription {
+  id             String           @id @default(uuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  company        String
+  description    String
+  url            String?
+  structuredData String           // JSON string of ParsedJob
+  createdAt      DateTime         @default(now())
+  analyses       ResumeAnalysis[]
+}
+
+model ResumeAnalysis {
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeId         String
+  resume           Resume           @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  jobDescriptionId String
+  jobDescription   JobDescription   @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  
+  overallScore     Int
+  categoryScores   String           // JSON string: { skills, keywords, experience, education, responsibilities }
+  matchingSkills   String           // JSON string array
+  missingSkills    String           // JSON string array
+  partialSkills    String           // JSON string array
+  matchingKeywords String           // JSON string array
+  missingKeywords  String           // JSON string array of details
+  partialKeywords  String           // JSON string array
+  resumeIssues     String           // JSON string array of issues
+  recommendations  String           // JSON string array
+  evidence         String?          // JSON string
+  
+  userConfirmedSkills String?       // JSON string array of user confirmed missing skills
+  createdAt        DateTime         @default(now())
+  tailoredResumes  TailoredResume[]
+}
+
+model TailoredResume {
+  id           String          @id @default(uuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysisId   String
+  analysis     ResumeAnalysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  resumeId     String
+  resume       Resume          @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  
+  content      String          // JSON string of TailoredResumeContent
+  changes      String          // JSON string array of ResumeChange
+  template     String          @default("classic")
+  version      Int             @default(1)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  versions     ResumeVersion[]
+}
+
+model ResumeVersion {
+  id               String         @id @default(uuid())
+  tailoredResumeId String
+  tailoredResume   TailoredResume @relation(fields: [tailoredResumeId], references: [id], onDelete: Cascade)
+  version          Int
+  content          String         // JSON string
+  changes          String         // JSON string
+  createdAt        DateTime       @default(now())
+}
