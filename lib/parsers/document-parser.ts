@@ -129,8 +129,10 @@ export function parseRawTextToStructuredResume(text: string): ParsedResume {
   const commonTechSkills = ['JavaScript', 'TypeScript', 'React', 'Next.js', 'Node.js', 'Python', 'SQL', 'PostgreSQL', 'Docker', 'AWS', 'Git', 'HTML', 'CSS', 'Tailwind CSS', 'GraphQL', 'REST API', 'C++', 'Java', 'Linux', 'MongoDB'];
   const commonSoftSkills = ['Communication', 'Leadership', 'Problem Solving', 'Teamwork', 'Critical Thinking', 'Project Management', 'Agile', 'Time Management'];
 
-  const foundTech = commonTechSkills.filter((s) => new RegExp(`\\b${s}\\b`, 'i').test(fullText));
-  const foundSoft = commonSoftSkills.filter((s) => new RegExp(`\\b${s}\\b`, 'i').test(fullText));
+  const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const foundTech = commonTechSkills.filter((s) => new RegExp(`(?:^|\\W)${escapeRegex(s)}(?:$|\\W)`, 'i').test(fullText));
+  const foundSoft = commonSoftSkills.filter((s) => new RegExp(`(?:^|\\W)${escapeRegex(s)}(?:$|\\W)`, 'i').test(fullText));
 
   // Extract custom skills from skill section lines
   const customSkills = sections.skills

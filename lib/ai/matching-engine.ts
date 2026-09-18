@@ -15,8 +15,10 @@ export function parseJobDescriptionText(title: string, company: string, descript
     'Project Management', 'Agile', 'Cross-functional Collaboration', 'Analytical Skills'
   ];
 
-  const requiredSkills = commonTech.filter(tech => new RegExp(`\\b${tech}\\b`, 'i').test(fullText));
-  const softSkills = commonSoft.filter(soft => new RegExp(`\\b${soft}\\b`, 'i').test(fullText));
+  const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const requiredSkills = commonTech.filter(tech => new RegExp(`(?:^|\\W)${escapeRegex(tech)}(?:$|\\W)`, 'i').test(fullText));
+  const softSkills = commonSoft.filter(soft => new RegExp(`(?:^|\\W)${escapeRegex(soft)}(?:$|\\W)`, 'i').test(fullText));
 
   // If few skills detected, extract capitalized phrases/nouns
   const keywords = Array.from(new Set([
