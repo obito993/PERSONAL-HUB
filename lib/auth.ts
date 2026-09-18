@@ -57,10 +57,32 @@ export async function getCurrentUser(): Promise<UserSession | null> {
     const payload = verified.payload as unknown as UserSession;
     if (!payload?.id) return null;
 
+    // Verify user exists in SQLite database (to prevent foreign key constraint failures)
+    const { db } = await import('@/lib/db');
+    let dbUser = await db.user.findUnique({ where: { id: payload.id } });
+
+    if (!dbUser && payload.email) {
+      // Auto-restore database user record if database was reset or created anew
+      try {
+        dbUser = await db.user.create({
+          data: {
+            id: payload.id,
+            email: payload.email,
+            name: payload.name || 'User',
+            password: 'session-restored-user',
+          },
+        });
+      } catch {
+        dbUser = await db.user.findUnique({ where: { email: payload.email } });
+      }
+    }
+
+    if (!dbUser) return null;
+
     return {
-      id: payload.id,
-      email: payload.email,
-      name: payload.name,
+      id: dbUser.id,
+      email: dbUser.email,
+      name: dbUser.name,
     };
   } catch {
     return null;

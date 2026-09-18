@@ -54,8 +54,9 @@ export async function POST(req: Request) {
         structuredData,
       },
     }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating resume:', error);
-    return NextResponse.json({ error: 'Failed to process and upload resume.' }, { status: 500 });
+    const errorMessage = error?.message || 'Failed to process and upload resume.';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
