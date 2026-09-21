@@ -5,6 +5,7 @@ import { CustomCursor } from '@/components/ui/comic/CustomCursor';
 import { ParticleBackground } from '@/components/ui/comic/ParticleBackground';
 import { AIAssistantGuide } from '@/components/ui/comic/AIAssistantGuide';
 import { ComicIntroOverlay } from '@/components/ui/comic/ComicIntroOverlay';
+import { ComicAudioSFX } from '@/components/ui/comic/ComicAudioSFX';
 
 export const metadata: Metadata = {
   title: 'ResumeForge AI - AI Career Command Center & ATS Resume Builder',
@@ -22,6 +23,7 @@ export default function RootLayout({
         <CustomCursor />
         <ParticleBackground />
         <ComicIntroOverlay />
+        <ComicAudioSFX />
         <Navbar />
         <main className="flex-1 relative z-10">{children}</main>
         <AIAssistantGuide />

@@ -20,10 +20,65 @@ import {
   Compass,
   ChevronRight,
 } from 'lucide-react';
-import { ComicPanel } from '@/components/ui/comic/ComicPanel';
+import { ComicBookPanel } from '@/components/ui/comic/ComicBookPanel';
+import { SpeechBubble } from '@/components/ui/comic/SpeechBubble';
+import { ComicActionBadge } from '@/components/ui/comic/ComicActionBadge';
+import { ComicBookFlip } from '@/components/ui/comic/ComicBookFlip';
 
 export default function LandingPage() {
   const [activeUniverse, setActiveUniverse] = useState(0);
+  const [activeChapter, setActiveChapter] = useState(0);
+
+  const chapters = [
+    {
+      num: 'CHAPTER 01',
+      title: 'START WITH YOU',
+      badge: 'POWER-UP!',
+      subtitle: 'Master Profile Engine',
+      desc: 'Create a permanent Master Profile. Keep all your real achievements, degrees, and skills in one secure place that is never overwritten.',
+      tag: '• FRESHER • EXPERIENCED • CAREER CHANGER',
+    },
+    {
+      num: 'CHAPTER 02',
+      title: 'FIND YOUR TARGET',
+      badge: 'TARGET ACQUIRED!',
+      subtitle: 'Job Description Extractor',
+      desc: 'Paste any job description from LinkedIn, Indeed, or company sites. AI instantly extracts required skills, tools, and responsibilities.',
+      tag: '• TECHNICAL • SOFT SKILLS • HARD REQUIREMENTS',
+    },
+    {
+      num: 'CHAPTER 03',
+      title: 'CONNECT THE DOTS',
+      badge: 'ZAP!',
+      subtitle: 'Anti-Hallucination AI Engine',
+      desc: 'Our AI connects target job requirements with your genuine background. Zero fake employers, zero invented degrees.',
+      tag: '• TRUTH-BOUND • VERIFIED EXPERIENCE',
+    },
+    {
+      num: 'CHAPTER 04',
+      title: 'BUILD PERFECT VERSION',
+      badge: 'BOOM!',
+      subtitle: 'Interactive Editor & 15 Templates',
+      desc: 'Edit bullets, accept or reject AI improvements in real time, and switch between 15 professional ATS templates with zero content loss.',
+      tag: '• 15 TEMPLATES • LIVE ZOOM PREVIEW',
+    },
+    {
+      num: 'CHAPTER 05',
+      title: 'MAKE IT ATS-READY',
+      badge: 'SCAN COMPLETE!',
+      subtitle: 'Futuristic ATS Scanner',
+      desc: 'Pass your resume through our top-to-bottom laser beam scanner. Review 3 separate diagnostic scores for Match, ATS, and Quality.',
+      tag: '• 3 SCORES • ISSUE DETECTOR',
+    },
+    {
+      num: 'CHAPTER 06',
+      title: 'GO GET THE INTERVIEW',
+      badge: 'TAILORED!',
+      subtitle: 'Complete Application Package',
+      desc: 'Download clean PDF and DOCX files. Generate matching cover letters, practice targeted interview questions, and track applications.',
+      tag: '• PDF / DOCX • COVER LETTER • INTERVIEW',
+    },
+  ];
 
   const careerWorlds = [
     { title: 'SOFTWARE ENGINEER', skills: ['TypeScript', 'React', 'Node.js', 'System Architecture', 'CI/CD'] },
@@ -42,22 +97,27 @@ export default function LandingPage() {
       <div className="bg-halftone pointer-events-none absolute inset-0 opacity-25" />
       <div className="pointer-events-none absolute top-0 left-1/2 h-[600px] w-[1100px] -translate-x-1/2 bg-gradient-to-b from-orange-500/15 via-orange-600/5 to-transparent blur-3xl" />
 
+      {/* Comic Book Issue Header Banner */}
+      <div className="mx-auto max-w-7xl px-4 pt-6 text-center font-mono">
+        <div className="inline-flex items-center gap-3 rounded border-2 border-orange-500/40 bg-orange-500/10 px-4 py-1.5 text-xs font-black tracking-widest text-orange-400 uppercase">
+          <span>RESUMEFORGE COMICS</span>
+          <span className="text-white">|</span>
+          <span className="text-amber-400">ISSUE #01: THE CAREER COMMAND CENTER</span>
+        </div>
+      </div>
+
       {/* Hero Section */}
-      <section className="relative mx-auto max-w-7xl px-4 pt-16 pb-20 text-center sm:px-6 md:pt-28 md:pb-28 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
-          className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-500/40 bg-orange-500/10 px-4 py-1.5 text-xs font-black tracking-widest text-orange-400 uppercase shadow-[0_0_15px_rgba(249,115,22,0.2)]"
-        >
-          <Zap className="h-3.5 w-3.5" />
-          <span>AI CAREER COMMAND CENTER v2.0</span>
-        </motion.div>
+      <section className="relative mx-auto max-w-7xl px-4 pt-12 pb-20 text-center sm:px-6 md:pt-20 md:pb-28 lg:px-8">
+        <div className="mx-auto max-w-2xl mb-6">
+          <SpeechBubble speaker="FORGE AI GUIDE" variant="yellow" className="text-left">
+            "HEY HERO! READY TO TRANSFORM YOUR EXPERIENCE INTO A HIGH-IMPACT RESUME RECRUITERS CAN READ AT A GLANCE?"
+          </SpeechBubble>
+        </div>
 
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
+          transition={{ duration: 0.5 }}
           className="mx-auto max-w-5xl font-black tracking-tight text-white uppercase text-4xl sm:text-6xl md:text-7xl lg:text-8xl leading-[1.05]"
         >
           YOUR CAREER.<br />
@@ -65,11 +125,20 @@ export default function LandingPage() {
           YOUR NEXT CHAPTER.
         </motion.h1>
 
+        {/* Action Badges Strip */}
+        <div className="my-6 flex flex-wrap justify-center gap-3">
+          <ComicActionBadge text="BOOM!" variant="orange" rotate={-4} />
+          <ComicActionBadge text="POWER-UP!" variant="yellow" rotate={6} />
+          <ComicActionBadge text="TAILORED!" variant="emerald" rotate={-8} />
+          <ComicActionBadge text="MATCH 95%!" variant="orange" rotate={5} />
+          <ComicActionBadge text="ATS SAFE!" variant="emerald" rotate={-3} />
+        </div>
+
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="mx-auto mt-6 max-w-2xl text-zinc-300 font-medium text-base sm:text-lg leading-relaxed"
+          className="mx-auto max-w-2xl text-zinc-300 font-medium text-base sm:text-lg leading-relaxed"
         >
           Build an ATS-friendly resume, tailor it to any job, and turn your experience into a resume recruiters can quickly understand.
         </motion.p>
@@ -98,12 +167,12 @@ export default function LandingPage() {
           </Link>
         </motion.div>
 
-        {/* Hero Interactive Command Center Visual */}
+        {/* Hero Interactive 3D Command Center Visual */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4 }}
-          className="relative mx-auto mt-16 max-w-5xl rounded-2xl border-2 border-orange-500/40 bg-[#0d0d12] p-4 text-left shadow-[0_0_40px_rgba(249,115,22,0.25)]"
+          className="relative mx-auto mt-16 max-w-5xl rounded-2xl border-2 border-orange-500 bg-[#0d0d12] p-4 text-left shadow-[6px_6px_0px_#f97316,0_0_40px_rgba(249,115,22,0.25)]"
         >
           <div className="flex items-center justify-between border-b border-orange-500/20 pb-3 px-2">
             <div className="flex items-center gap-2">
@@ -112,9 +181,7 @@ export default function LandingPage() {
               <div className="h-3 w-3 rounded-full bg-emerald-500" />
               <span className="ml-2 font-mono text-xs text-orange-400 font-bold">LIVE AI SCANNER MOCKUP</span>
             </div>
-            <span className="rounded bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] font-black text-emerald-400 uppercase border border-emerald-500/30">
-              STATUS: READY TO APPLY
-            </span>
+            <ComicActionBadge text="STATUS: READY TO APPLY" variant="emerald" size="sm" rotate={0} />
           </div>
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4 p-2">
@@ -164,7 +231,7 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
-      {/* 6-CHAPTER STORY-DRIVEN SCROLL */}
+      {/* 6-CHAPTER INTERACTIVE STORY-DRIVEN SCROLL & FLIP */}
       <section className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="mb-12 text-center">
           <span className="font-mono text-xs font-black tracking-widest text-orange-500 uppercase">
@@ -175,60 +242,50 @@ export default function LandingPage() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <ComicPanel panelTag="CHAPTER 01" title="START WITH YOU" subtitle="Master Profile Engine">
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Create a permanent Master Profile. Keep all your real achievements, degrees, and skills in one secure place that is never overwritten.
-            </p>
-            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
-              • Fresher • Experienced • Career Changer
-            </div>
-          </ComicPanel>
+        {/* Chapter Selection Bar */}
+        <div className="mb-8 flex flex-wrap justify-center gap-2 font-mono">
+          {chapters.map((ch, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActiveChapter(idx)}
+              className={`px-3 py-1.5 rounded text-xs font-black uppercase transition-all ${
+                activeChapter === idx
+                  ? 'bg-orange-500 text-black border-2 border-black shadow-[3px_3px_0px_#000]'
+                  : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white'
+              }`}
+            >
+              {ch.num}
+            </button>
+          ))}
+        </div>
 
-          <ComicPanel panelTag="CHAPTER 02" title="FIND YOUR TARGET" subtitle="Job Description Extractor">
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Paste any job description from LinkedIn, Indeed, or company sites. AI instantly extracts required skills, tools, and responsibilities.
-            </p>
-            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
-              • Technical • Soft Skills • Hard Requirements
-            </div>
-          </ComicPanel>
+        {/* Chapter Flip Display */}
+        <ComicBookFlip chapterKey={activeChapter}>
+          <div className="mx-auto max-w-3xl">
+            <ComicBookPanel
+              issueTag={chapters[activeChapter].num}
+              title={chapters[activeChapter].title}
+              subtitle={chapters[activeChapter].subtitle}
+              badge={chapters[activeChapter].badge}
+            >
+              <p className="text-sm text-zinc-300 leading-relaxed font-medium">
+                {chapters[activeChapter].desc}
+              </p>
+              <div className="mt-6 font-mono text-xs font-bold text-orange-400 uppercase border-t border-orange-500/20 pt-3">
+                {chapters[activeChapter].tag}
+              </div>
+            </ComicBookPanel>
+          </div>
+        </ComicBookFlip>
 
-          <ComicPanel panelTag="CHAPTER 03" title="CONNECT THE DOTS" subtitle="Anti-Hallucination AI">
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Our AI connects target job requirements with your genuine background. Zero fake employers, zero invented degrees.
-            </p>
-            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
-              • Truth-Bound • Verified Experience
-            </div>
-          </ComicPanel>
-
-          <ComicPanel panelTag="CHAPTER 04" title="BUILD PERFECT VERSION" subtitle="Interactive Editor">
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Edit bullets, accept or reject AI improvements in real time, and switch between 15 professional ATS templates with zero content loss.
-            </p>
-            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
-              • 15 Templates • Live Zoom Preview
-            </div>
-          </ComicPanel>
-
-          <ComicPanel panelTag="CHAPTER 05" title="MAKE IT ATS-READY" subtitle="Futuristic ATS Scanner">
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Pass your resume through our top-to-bottom laser beam scanner. Review 3 separate diagnostic scores for Match, ATS, and Quality.
-            </p>
-            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
-              • 3 Scores • Issue Detector
-            </div>
-          </ComicPanel>
-
-          <ComicPanel panelTag="CHAPTER 06" title="GO GET THE INTERVIEW" subtitle="Complete Application Package">
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Download clean PDF and DOCX files. Generate matching cover letters, practice targeted interview questions, and track applications.
-            </p>
-            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
-              • PDF / DOCX • Cover Letter • Interview
-            </div>
-          </ComicPanel>
+        {/* 6 Comic Panels Grid */}
+        <div className="mt-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {chapters.map((c, i) => (
+            <ComicBookPanel key={i} issueTag={c.num} title={c.title} subtitle={c.subtitle} badge={c.badge}>
+              <p className="text-xs text-zinc-400 leading-relaxed">{c.desc}</p>
+              <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">{c.tag}</div>
+            </ComicBookPanel>
+          ))}
         </div>
       </section>
 
@@ -251,7 +308,7 @@ export default function LandingPage() {
                 onClick={() => setActiveUniverse(idx)}
                 className={`flex-none w-72 rounded-xl border-2 p-5 text-left transition-all ${
                   activeUniverse === idx
-                    ? 'border-orange-500 bg-orange-500/10 shadow-[0_0_20px_rgba(249,115,22,0.3)]'
+                    ? 'border-orange-500 bg-orange-500/10 shadow-[4px_4px_0px_#f97316]'
                     : 'border-zinc-800 bg-[#09090b] hover:border-zinc-700'
                 }`}
               >
@@ -273,12 +330,14 @@ export default function LandingPage() {
       {/* CTA SECTION */}
       <section className="relative border-t-2 border-orange-500/20 bg-[#09090b] py-24 text-center">
         <div className="mx-auto max-w-4xl px-4">
+          <div className="mx-auto max-w-md mb-6">
+            <SpeechBubble speaker="FORGE AI" variant="orange">
+              "YOUR STORY DESERVES MORE THAN A GENERIC RESUME. BUILD IT. TAILOR IT. OPTIMIZE IT. APPLY!"
+            </SpeechBubble>
+          </div>
           <h2 className="text-4xl font-black text-white uppercase sm:text-6xl">
-            YOUR STORY DESERVES MORE THAN A GENERIC RESUME.
+            READY FOR YOUR NEXT CHAPTER?
           </h2>
-          <p className="mt-4 text-zinc-400 font-medium text-base sm:text-lg">
-            Build it. Tailor it. Optimize it. Apply.
-          </p>
           <div className="mt-10">
             <Link
               href="/resumes/create"
