@@ -14,17 +14,56 @@
   }
 }
 
-/* Glassmorphism utility */
+/* Halftone and Grid Patterns */
+.bg-halftone {
+  background-image: radial-gradient(rgba(249, 115, 22, 0.15) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.bg-comic-grid {
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Comic Panel Borders & Shadow Glows */
+.comic-border {
+  border: 2px solid rgba(249, 115, 22, 0.35);
+  box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.8), 0 0 15px rgba(249, 115, 22, 0.15);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.comic-border:hover {
+  border-color: rgba(249, 115, 22, 0.9);
+  box-shadow: 6px 6px 0px rgba(249, 115, 22, 0.25), 0 0 25px rgba(249, 115, 22, 0.35);
+  transform: translateY(-2px);
+}
+
+.comic-border-solid {
+  border: 2px solid #f97316;
+  box-shadow: 4px 4px 0px #000000;
+}
+
+/* Glow Effects */
+.glow-orange {
+  box-shadow: 0 0 25px rgba(249, 115, 22, 0.4);
+}
+
+.text-glow-orange {
+  text-shadow: 0 0 12px rgba(249, 115, 22, 0.6);
+}
+
+/* Glassmorphism */
 .glass-panel {
-  background: rgba(18, 18, 22, 0.75);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 15, 18, 0.82);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(249, 115, 22, 0.2);
 }
 
 .glass-card {
-  background: rgba(24, 24, 27, 0.6);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(63, 63, 70, 0.4);
+  background: rgba(24, 24, 27, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(63, 63, 70, 0.5);
 }
 
 /* Custom Scrollbar */
@@ -44,4 +83,18 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #f97316;
+}
+
+/* Print Rules - Ensures generated resumes output clean paper */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
 }

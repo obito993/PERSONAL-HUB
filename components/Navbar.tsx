@@ -4,11 +4,10 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Sparkles,
+  Zap,
   FileText,
   Briefcase,
   BarChart2,
-  History,
   LogOut,
   User,
   Menu,
@@ -16,6 +15,9 @@ import {
   HelpCircle,
   Kanban,
   ShieldCheck,
+  Layout,
+  PlusCircle,
+  Scan,
 } from 'lucide-react';
 import { UserSession } from '@/types';
 
@@ -44,43 +46,46 @@ export const Navbar: React.FC = () => {
   };
 
   const navLinks = [
-    { label: 'Dashboard', href: '/dashboard', icon: BarChart2, protected: true },
-    { label: 'Master Profile', href: '/profile', icon: ShieldCheck, protected: true },
-    { label: 'Upload Resume', href: '/resumes/new', icon: FileText, protected: true },
-    { label: 'Match Job', href: '/jobs/new', icon: Briefcase, protected: true },
-    { label: 'Cover Letters', href: '/cover-letters', icon: FileText, protected: true },
-    { label: 'Interview Prep', href: '/interview', icon: HelpCircle, protected: true },
-    { label: 'Tracker', href: '/tracker', icon: Kanban, protected: true },
-    { label: 'History', href: '/history', icon: History, protected: true },
+    { label: 'HQ DASHBOARD', href: '/dashboard', icon: BarChart2, protected: true },
+    { label: 'MASTER PROFILE', href: '/profile', icon: ShieldCheck, protected: true },
+    { label: 'MY RESUMES', href: '/resumes', icon: FileText, protected: true },
+    { label: 'JOB ANALYZER', href: '/jobs/analyze', icon: Briefcase, protected: true },
+    { label: 'ATS SCANNER', href: '/ats', icon: Scan, protected: true },
+    { label: 'TEMPLATES', href: '/templates', icon: Layout, protected: false },
+    { label: 'TRACKER', href: '/tracker', icon: Kanban, protected: true },
+    { label: 'INTERVIEW', href: '/interview', icon: HelpCircle, protected: true },
   ];
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md">
+    <header className="sticky top-0 z-40 w-full border-b-2 border-orange-500/20 bg-[#09090b]/85 backdrop-blur-xl no-print">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand Logo */}
-        <Link href="/" className="flex items-center gap-2 font-extrabold text-xl tracking-tight text-white group shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-orange-600 via-amber-500 to-violet-600 p-0.5 shadow-lg shadow-orange-500/20 group-hover:scale-105 transition-transform">
-            <div className="w-full h-full bg-zinc-950 rounded-[7px] flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-orange-500" />
-            </div>
+        <Link
+          href="/"
+          data-cursor="HQ"
+          className="flex items-center gap-2 font-black text-lg tracking-tight text-white group shrink-0 uppercase"
+        >
+          <div className="w-8 h-8 rounded-lg border-2 border-orange-500 bg-orange-500/10 p-0.5 shadow-[0_0_15px_rgba(249,115,22,0.4)] group-hover:bg-orange-500 group-hover:text-black transition-all flex items-center justify-center">
+            <Zap className="w-4 h-4 text-orange-400 group-hover:text-black transition-colors" />
           </div>
-          <span>ResumeForge<span className="text-orange-500">.AI</span></span>
+          <span className="font-mono">RESUMEFORGE<span className="text-orange-500 text-glow-orange">.AI</span></span>
         </Link>
 
         {/* Desktop Nav Links */}
         <nav className="hidden lg:flex items-center gap-1 overflow-x-auto">
           {navLinks.map((link) => {
             if (link.protected && !user) return null;
-            const active = pathname === link.href;
+            const active = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
             const Icon = link.icon;
             return (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                data-cursor="OPEN"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded border text-[11px] font-black tracking-wider transition-all whitespace-nowrap uppercase ${
                   active
-                    ? 'bg-zinc-800/90 text-orange-400 border border-orange-500/30 font-semibold'
-                    : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                    ? 'border-orange-500 bg-orange-500/20 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.2)]'
+                    : 'border-transparent text-zinc-400 hover:text-white hover:border-zinc-700 hover:bg-zinc-900'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -92,20 +97,32 @@ export const Navbar: React.FC = () => {
 
         {/* Auth CTA / User Profile */}
         <div className="hidden md:flex items-center gap-3 shrink-0">
+          {user && (
+            <Link
+              href="/resumes/create"
+              data-cursor="NEW"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded border-2 border-orange-500 bg-orange-500 text-black font-black text-xs tracking-wider uppercase shadow-[0_0_15px_rgba(249,115,22,0.4)] hover:bg-orange-400 transition-all"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>+ CREATE RESUME</span>
+            </Link>
+          )}
+
           {loading ? (
-            <div className="w-20 h-8 bg-zinc-900 animate-pulse rounded-lg" />
+            <div className="w-20 h-8 bg-zinc-900 animate-pulse rounded border border-zinc-800" />
           ) : user ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <Link
                 href="/profile"
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-300 hover:border-orange-500/50 transition-colors"
+                data-cursor="PROFILE"
+                className="flex items-center gap-2 px-3 py-1.5 rounded border border-zinc-800 bg-zinc-900/90 text-xs font-bold text-zinc-300 hover:border-orange-500/50 transition-colors"
               >
                 <User className="w-3.5 h-3.5 text-orange-400" />
-                <span>{user.name}</span>
+                <span>{user.name.toUpperCase()}</span>
               </Link>
               <button
                 onClick={handleSignOut}
-                className="p-2 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-900 transition-colors"
+                className="p-2 rounded border border-zinc-800 text-zinc-400 hover:text-rose-400 hover:border-rose-500/40 transition-colors"
                 title="Sign Out"
               >
                 <LogOut className="w-4 h-4" />
@@ -115,15 +132,15 @@ export const Navbar: React.FC = () => {
             <div className="flex items-center gap-2">
               <Link
                 href="/login"
-                className="px-4 py-2 text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+                className="px-3.5 py-1.5 text-xs font-bold text-zinc-300 hover:text-white transition-colors"
               >
-                Sign In
+                SIGN IN
               </Link>
               <Link
                 href="/register"
-                className="px-4 py-2 text-xs font-bold text-black bg-orange-500 hover:bg-orange-400 rounded-lg shadow-lg shadow-orange-500/20 transition-all"
+                className="px-4 py-1.5 text-xs font-black text-black bg-orange-500 hover:bg-orange-400 rounded border-2 border-orange-500 uppercase tracking-wider shadow-[0_0_15px_rgba(249,115,22,0.3)] transition-all"
               >
-                Get Started Free
+                JOIN THE EXPERIENCE
               </Link>
             </div>
           )}
@@ -132,15 +149,15 @@ export const Navbar: React.FC = () => {
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="lg:hidden p-2 rounded-lg text-zinc-400 hover:text-white"
+          className="lg:hidden p-2 rounded border border-orange-500/30 text-zinc-400 hover:text-white"
         >
-          {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          {mobileMenuOpen ? <X className="w-6 h-6 text-orange-400" /> : <Menu className="w-6 h-6" />}
         </button>
       </div>
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-b border-zinc-800 bg-zinc-950 px-4 pt-2 pb-4 space-y-1">
+        <div className="lg:hidden border-b-2 border-orange-500/30 bg-[#09090b] px-4 pt-2 pb-4 space-y-1">
           {navLinks.map((link) => {
             if (link.protected && !user) return null;
             const Icon = link.icon;
@@ -149,30 +166,22 @@ export const Navbar: React.FC = () => {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-zinc-300 hover:bg-zinc-900"
+                className="flex items-center gap-3 px-3 py-2 rounded text-xs font-extrabold text-zinc-300 hover:bg-zinc-900 hover:text-orange-400"
               >
                 <Icon className="w-4 h-4 text-orange-400" />
                 {link.label}
               </Link>
             );
           })}
-          {!user && (
-            <div className="pt-2 flex flex-col gap-2">
-              <Link
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full text-center py-2 text-xs font-medium text-zinc-300 bg-zinc-900 rounded-lg"
-              >
-                Sign In
-              </Link>
-              <Link
-                href="/register"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full text-center py-2 text-xs font-bold text-black bg-orange-500 rounded-lg"
-              >
-                Get Started Free
-              </Link>
-            </div>
+          {user && (
+            <Link
+              href="/resumes/create"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center justify-center gap-2 mt-3 py-2 text-xs font-black text-black bg-orange-500 rounded uppercase tracking-wider"
+            >
+              <PlusCircle className="w-4 h-4" />
+              CREATE RESUME
+            </Link>
           )}
         </div>
       )}

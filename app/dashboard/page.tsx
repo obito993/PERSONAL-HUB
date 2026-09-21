@@ -4,7 +4,22 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Plus, FileText, Briefcase, Sparkles, TrendingUp, ArrowRight, Eye, AlertCircle } from 'lucide-react';
+import {
+  Plus,
+  FileText,
+  Briefcase,
+  Zap,
+  TrendingUp,
+  ArrowRight,
+  Eye,
+  ShieldCheck,
+  Scan,
+  Kanban,
+  HelpCircle,
+  Layout,
+  PlusCircle,
+} from 'lucide-react';
+import { ComicPanel } from '@/components/ui/comic/ComicPanel';
 
 interface AnalysisSummary {
   id: string;
@@ -56,10 +71,10 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-6">
-        <div className="h-10 w-48 bg-zinc-900 animate-pulse rounded-lg" />
+        <div className="h-10 w-48 bg-zinc-900 animate-pulse rounded-lg border border-zinc-800" />
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 bg-zinc-900 animate-pulse rounded-xl" />
+            <div key={i} className="h-28 bg-zinc-900 animate-pulse rounded-xl border border-zinc-800" />
           ))}
         </div>
       </div>
@@ -68,116 +83,139 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b-2 border-orange-500/20 pb-6">
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Dashboard</h1>
-          <p className="text-xs text-zinc-400 mt-1">Overview of your ATS resume analyses & tailored versions</p>
+          <span className="font-mono text-xs font-black text-orange-500 uppercase tracking-widest">
+            CAREER COMMAND CENTER
+          </span>
+          <h1 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-tight">
+            YOUR HQ DASHBOARD
+          </h1>
         </div>
         <Link
-          href={resumeCount === 0 ? '/resumes/new' : '/jobs/new'}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-orange-500 hover:bg-orange-400 text-black font-extrabold text-sm shadow-lg shadow-orange-500/20 transition-transform transform hover:scale-105"
+          href="/resumes/create"
+          data-cursor="NEW"
+          className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl border-2 border-orange-500 bg-orange-500 text-black font-black text-xs tracking-wider uppercase shadow-[0_0_20px_rgba(249,115,22,0.4)] hover:bg-orange-400 transition-all"
         >
-          <Plus className="w-4 h-4 stroke-[3]" />
-          <span>+ New Analysis</span>
+          <PlusCircle className="w-4 h-4 stroke-[3]" />
+          <span>+ CREATE RESUME</span>
         </Link>
       </div>
 
-      {/* Stats Grid */}
+      {/* Large Visual Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-        <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800 shadow-sm">
-          <div className="flex items-center justify-between text-zinc-400 text-xs font-medium">
-            <span>Total Resumes</span>
+        <div className="comic-border rounded-xl bg-[#0d0d12] p-5">
+          <div className="flex items-center justify-between text-zinc-400 text-xs font-mono font-bold uppercase">
+            <span>RESUMES LAB</span>
             <FileText className="w-4 h-4 text-orange-400" />
           </div>
-          <div className="text-3xl font-black text-white mt-2">{resumeCount}</div>
+          <div className="text-4xl font-black text-white mt-2 font-mono">0{resumeCount}</div>
+          <div className="text-[10px] text-zinc-500 font-mono mt-1">Uploaded & Tailored Builds</div>
         </div>
 
-        <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800 shadow-sm">
-          <div className="flex items-center justify-between text-zinc-400 text-xs font-medium">
-            <span>Total Analyses</span>
-            <Briefcase className="w-4 h-4 text-violet-400" />
+        <div className="comic-border rounded-xl bg-[#0d0d12] p-5">
+          <div className="flex items-center justify-between text-zinc-400 text-xs font-mono font-bold uppercase">
+            <span>JOBS ANALYZED</span>
+            <Briefcase className="w-4 h-4 text-orange-400" />
           </div>
-          <div className="text-3xl font-black text-white mt-2">{analyses.length}</div>
+          <div className="text-4xl font-black text-white mt-2 font-mono">{analyses.length < 10 ? `0${analyses.length}` : analyses.length}</div>
+          <div className="text-[10px] text-zinc-500 font-mono mt-1">Target Descriptions</div>
         </div>
 
-        <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800 shadow-sm">
-          <div className="flex items-center justify-between text-zinc-400 text-xs font-medium">
-            <span>Tailored Builds</span>
-            <Sparkles className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-3xl font-black text-white mt-2">{analyses.length}</div>
-        </div>
-
-        <div className="p-5 rounded-xl bg-zinc-900/60 border border-zinc-800 shadow-sm">
-          <div className="flex items-center justify-between text-zinc-400 text-xs font-medium">
-            <span>Average Match Score</span>
+        <div className="comic-border rounded-xl bg-[#0d0d12] p-5">
+          <div className="flex items-center justify-between text-zinc-400 text-xs font-mono font-bold uppercase">
+            <span>AVERAGE MATCH</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-3xl font-black text-white mt-2">
+          <div className="text-4xl font-black text-emerald-400 mt-2 font-mono">
             {avgMatchScore > 0 ? `${avgMatchScore}%` : 'N/A'}
           </div>
+          <div className="text-[10px] text-zinc-500 font-mono mt-1">Diagnostic Alignment</div>
+        </div>
+
+        <div className="comic-border rounded-xl bg-[#0d0d12] p-5">
+          <div className="flex items-center justify-between text-zinc-400 text-xs font-mono font-bold uppercase">
+            <span>ATS READINESS</span>
+            <Scan className="w-4 h-4 text-orange-400" />
+          </div>
+          <div className="text-4xl font-black text-white mt-2 font-mono">HIGH</div>
+          <div className="text-[10px] text-zinc-500 font-mono mt-1">Clean Parsing Verified</div>
+        </div>
+      </div>
+
+      {/* Portal Cards Grid */}
+      <div className="mb-10">
+        <h2 className="text-xl font-black text-white uppercase tracking-wider mb-4 font-mono">
+          COMMAND PORTALS
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Link href="/profile" data-cursor="PROFILE">
+            <ComicPanel panelTag="PORTAL 01" title="MASTER PROFILE" subtitle="Single Source of Truth">
+              <p className="text-xs text-zinc-400">Manage permanent background records across education, experience, and verified skills.</p>
+            </ComicPanel>
+          </Link>
+
+          <Link href="/jobs/analyze" data-cursor="ANALYZE">
+            <ComicPanel panelTag="PORTAL 02" title="JOB ANALYZER" subtitle="Requirement Extractor">
+              <p className="text-xs text-zinc-400">Extract skills, keywords, and responsibilities from any job description.</p>
+            </ComicPanel>
+          </Link>
+
+          <Link href="/ats" data-cursor="SCAN">
+            <ComicPanel panelTag="PORTAL 03" title="ATS SCANNER" subtitle="Laser Diagnostic Lab">
+              <p className="text-xs text-zinc-400">Pass document through top-to-bottom scanner to identify formatting & keyword issues.</p>
+            </ComicPanel>
+          </Link>
         </div>
       </div>
 
       {/* Recent Analyses Section */}
       <div>
-        <h2 className="text-xl font-bold text-white mb-4">Recent Analyses</h2>
+        <h2 className="text-xl font-black text-white uppercase tracking-wider mb-4 font-mono">
+          RECENT TARGET ANALYSES
+        </h2>
 
         {analyses.length === 0 ? (
-          <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-800 border-dashed">
-            <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center mx-auto text-zinc-400 mb-3">
-              <Sparkles className="w-6 h-6 text-orange-400" />
+          <ComicPanel panelTag="EMPTY LAB" title="NO JOBS ANALYZED YET" subtitle="Start by analyzing a job description">
+            <div className="py-6 text-center">
+              <Zap className="h-10 w-10 text-orange-400 mx-auto mb-3 animate-pulse" />
+              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                Upload your resume and paste a job description to calculate your 3 diagnostic scores & generate a tailored version.
+              </p>
+              <div className="mt-6">
+                <Link
+                  href="/jobs/analyze"
+                  className="inline-flex items-center gap-2 rounded border-2 border-orange-500 bg-orange-500 px-6 py-2.5 font-black text-black text-xs uppercase"
+                >
+                  <span>ANALYZE FIRST JOB</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
             </div>
-            <h3 className="text-lg font-bold text-white">No job descriptions analyzed yet</h3>
-            <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto">
-              Upload your resume and paste a job description to calculate your match score & ATS fixes.
-            </p>
-            <div className="mt-6">
-              <Link
-                href="/resumes/new"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-black font-bold text-xs"
-              >
-                Upload Your Resume <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
+          </ComicPanel>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {analyses.map((item) => (
-              <motion.div
+              <ComicPanel
                 key={item.id}
-                whileHover={{ y: -2 }}
-                className="p-5 rounded-xl bg-zinc-900/70 border border-zinc-800 shadow-lg flex flex-col justify-between"
+                panelTag={`SCORE ${item.overallScore}%`}
+                title={item.jobDescription.title}
+                subtitle={item.jobDescription.company}
               >
-                <div>
-                  <div className="flex justify-between items-start gap-2 mb-2">
-                    <div>
-                      <h3 className="font-bold text-white text-base line-clamp-1">{item.jobDescription.title}</h3>
-                      <p className="text-xs text-orange-400 font-medium">{item.jobDescription.company}</p>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-xl font-extrabold text-white">{item.overallScore}%</span>
-                      <span className="text-[10px] text-zinc-500 uppercase font-bold">Match</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-zinc-800/80 text-xs text-zinc-400 flex justify-between items-center">
-                    <span>Resume: <span className="text-zinc-200">{item.resume.name}</span></span>
-                    <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-                  </div>
+                <div className="flex justify-between items-center text-xs text-zinc-400 font-mono mb-4">
+                  <span>Resume: {item.resume.name}</span>
+                  <span>{new Date(item.createdAt).toLocaleDateString()}</span>
                 </div>
-
-                <div className="mt-5">
-                  <Link
-                    href={`/analysis/${item.id}`}
-                    className="w-full py-2 px-4 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>View Analysis</span>
-                  </Link>
-                </div>
-              </motion.div>
+                <Link
+                  href={`/analysis/${item.id}`}
+                  data-cursor="VIEW"
+                  className="w-full py-2 px-4 rounded border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500 hover:text-black text-orange-400 font-black text-xs uppercase flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>VIEW ANALYSIS</span>
+                </Link>
+              </ComicPanel>
             ))}
           </div>
         )}

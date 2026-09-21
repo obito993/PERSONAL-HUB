@@ -1,13 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  Sparkles,
+  Zap,
   ArrowRight,
   ShieldCheck,
-  Zap,
   Target,
   FileText,
   HelpCircle,
@@ -16,223 +15,278 @@ import {
   CheckCircle2,
   Briefcase,
   Layers,
-  Award,
-  Globe,
-  GraduationCap,
+  Sparkles,
+  Scan,
+  Compass,
+  ChevronRight,
 } from 'lucide-react';
+import { ComicPanel } from '@/components/ui/comic/ComicPanel';
 
 export default function LandingPage() {
+  const [activeUniverse, setActiveUniverse] = useState(0);
+
+  const careerWorlds = [
+    { title: 'SOFTWARE ENGINEER', skills: ['TypeScript', 'React', 'Node.js', 'System Architecture', 'CI/CD'] },
+    { title: 'DATA ANALYST', skills: ['SQL', 'Python', 'Tableau', 'ETL Pipelines', 'A/B Testing'] },
+    { title: 'TEACHER & EDUCATOR', skills: ['Curriculum Design', 'Student Assessment', 'Lesson Planning', 'EdTech'] },
+    { title: 'ACCOUNTANT & FINANCE', skills: ['Financial Reporting', 'GAAP', 'Auditing', 'Tax Strategy', 'Excel'] },
+    { title: 'NURSE & HEALTHCARE', skills: ['Patient Care', 'Clinical Rotations', 'EMR Systems', 'Triage', 'BLS/ACLS'] },
+    { title: 'MARKETING EXECUTIVE', skills: ['SEO/SEM', 'Brand Strategy', 'Growth Hacking', 'Copywriting', 'Analytics'] },
+    { title: 'MECHANICAL ENGINEER', skills: ['SolidWorks', 'CAD/CAM', 'Thermal Analysis', 'Prototyping', 'GD&T'] },
+    { title: 'OPERATIONS MANAGER', skills: ['Supply Chain', 'Logistics', 'Vendor Relations', 'Six Sigma', 'Budgeting'] },
+  ];
+
   return (
-    <div className="relative overflow-hidden bg-zinc-950 text-white">
-      {/* Background Glow Gradient */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1100px] h-[550px] bg-gradient-to-b from-orange-600/15 via-violet-600/10 to-transparent blur-3xl pointer-events-none" />
+    <div className="relative overflow-hidden bg-[#09090b] text-white">
+      {/* Background Halftone & Glow */}
+      <div className="bg-halftone pointer-events-none absolute inset-0 opacity-25" />
+      <div className="pointer-events-none absolute top-0 left-1/2 h-[600px] w-[1100px] -translate-x-1/2 bg-gradient-to-b from-orange-500/15 via-orange-600/5 to-transparent blur-3xl" />
 
       {/* Hero Section */}
-      <section className="relative pt-20 pb-16 md:pt-32 md:pb-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <section className="relative mx-auto max-w-7xl px-4 pt-16 pb-20 text-center sm:px-6 md:pt-28 md:pb-28 lg:px-8">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/90 border border-orange-500/30 text-xs font-semibold text-orange-400 mb-8 shadow-lg shadow-orange-500/10"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4 }}
+          className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-500/40 bg-orange-500/10 px-4 py-1.5 text-xs font-black tracking-widest text-orange-400 uppercase shadow-[0_0_15px_rgba(249,115,22,0.2)]"
         >
-          <Sparkles className="w-3.5 h-3.5 text-orange-400" />
-          <span>Universal AI Resume Builder & Job Application Platform</span>
+          <Zap className="h-3.5 w-3.5" />
+          <span>AI CAREER COMMAND CENTER v2.0</span>
         </motion.div>
 
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.1 }}
-          className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight max-w-4xl mx-auto leading-[1.1]"
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="mx-auto max-w-5xl font-black tracking-tight text-white uppercase text-4xl sm:text-6xl md:text-7xl lg:text-8xl leading-[1.05]"
         >
-          Build a Resume That <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-violet-400">Fits the Job</span>.
+          YOUR CAREER.<br />
+          <span className="text-orange-500 text-glow-orange">YOUR STORY.</span><br />
+          YOUR NEXT CHAPTER.
         </motion.h1>
 
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="mt-6 text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed"
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="mx-auto mt-6 max-w-2xl text-zinc-300 font-medium text-base sm:text-lg leading-relaxed"
         >
-          Create, tailor and optimize professional resumes for any career using AI — while keeping your real experience at the center.
+          Build an ATS-friendly resume, tailor it to any job, and turn your experience into a resume recruiters can quickly understand.
         </motion.p>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4"
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row"
         >
           <Link
-            href="/profile"
-            className="w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-black bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 shadow-xl shadow-orange-500/25 flex items-center justify-center gap-2 transition-all transform hover:-translate-y-0.5"
+            href="/resumes/create"
+            data-cursor="CREATE"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-xl border-2 border-orange-500 bg-orange-500 px-8 py-4 font-black text-black text-sm tracking-wider uppercase shadow-[0_0_25px_rgba(249,115,22,0.5)] hover:bg-orange-400 hover:scale-105 transition-all"
           >
-            <span>Build My Resume</span>
-            <ArrowRight className="w-5 h-5" />
+            <span>CREATE MY RESUME</span>
+            <ArrowRight className="h-5 w-5" />
           </Link>
           <Link
-            href="/jobs/new"
-            className="w-full sm:w-auto px-8 py-4 rounded-xl font-semibold text-zinc-300 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+            href="/jobs/analyze"
+            data-cursor="ANALYZE"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border-2 border-zinc-700 bg-zinc-900/90 px-8 py-4 font-black text-white text-sm tracking-wider uppercase hover:border-orange-500 hover:bg-zinc-800 transition-all"
           >
-            <Target className="w-4 h-4 text-orange-400" />
-            <span>Analyze a Job</span>
+            <Target className="h-4 w-4 text-orange-400" />
+            <span>ANALYZE A JOB</span>
           </Link>
         </motion.div>
 
-        {/* Product Preview Dashboard Mockup */}
+        {/* Hero Interactive Command Center Visual */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
-          className="mt-16 max-w-5xl mx-auto p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800 shadow-2xl backdrop-blur-xl relative"
+          transition={{ duration: 0.7, delay: 0.4 }}
+          className="relative mx-auto mt-16 max-w-5xl rounded-2xl border-2 border-orange-500/40 bg-[#0d0d12] p-4 text-left shadow-[0_0_40px_rgba(249,115,22,0.25)]"
         >
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800/80 bg-zinc-950/60 rounded-t-xl">
-            <div className="w-3 h-3 rounded-full bg-rose-500/80" />
-            <div className="w-3 h-3 rounded-full bg-amber-500/80" />
-            <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
-            <span className="text-xs text-zinc-500 ml-2 font-mono">resumeforge.ai/dashboard</span>
+          <div className="flex items-center justify-between border-b border-orange-500/20 pb-3 px-2">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full bg-rose-500" />
+              <div className="h-3 w-3 rounded-full bg-amber-500" />
+              <div className="h-3 w-3 rounded-full bg-emerald-500" />
+              <span className="ml-2 font-mono text-xs text-orange-400 font-bold">LIVE AI SCANNER MOCKUP</span>
+            </div>
+            <span className="rounded bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] font-black text-emerald-400 uppercase border border-emerald-500/30">
+              STATUS: READY TO APPLY
+            </span>
           </div>
 
-          <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-6 text-left">
-            {/* 3 Diagnostic Metrics */}
-            <div className="md:col-span-4 p-5 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3">
-              <div className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-2">3 Diagnostic Metrics</div>
-              <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800/80 flex justify-between items-center">
-                <span className="text-xs text-zinc-300 font-medium">Job Match</span>
-                <span className="text-sm font-black text-emerald-400">88%</span>
-              </div>
-              <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800/80 flex justify-between items-center">
-                <span className="text-xs text-zinc-300 font-medium">ATS Compatibility</span>
-                <span className="text-sm font-black text-amber-400">92%</span>
-              </div>
-              <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800/80 flex justify-between items-center">
-                <span className="text-xs text-zinc-300 font-medium">Resume Quality</span>
-                <span className="text-sm font-black text-emerald-400">86%</span>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4 p-2">
+            {/* Blank Resume Scanner */}
+            <div className="md:col-span-4 rounded-xl border border-zinc-800 bg-[#09090b] p-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-orange-500 shadow-[0_0_10px_#f97316] animate-scan" />
+              <div className="text-xs font-mono text-zinc-400 font-bold uppercase mb-2">RAW RESUME DOCUMENT</div>
+              <div className="space-y-2">
+                <div className="h-4 w-3/4 rounded bg-zinc-800" />
+                <div className="h-3 w-full rounded bg-zinc-900" />
+                <div className="h-3 w-5/6 rounded bg-zinc-900" />
+                <div className="mt-3 h-16 w-full rounded border border-orange-500/30 bg-orange-500/10 p-2 text-[11px] font-mono text-orange-300">
+                  AI SCAN: Extracted 14 skills, 3 projects, 4 experience bullets.
+                </div>
               </div>
             </div>
 
-            {/* Platform Modules Stack */}
-            <div className="md:col-span-8 grid grid-cols-2 gap-3">
-              <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                <ShieldCheck className="w-5 h-5 text-emerald-400 mb-2" />
-                <div className="text-xs font-bold text-white">Master Profile</div>
-                <p className="text-[11px] text-zinc-400 mt-1">Single source of truth. Never overwritten during tailoring.</p>
+            {/* Keyword Connection Engine */}
+            <div className="md:col-span-5 rounded-xl border border-zinc-800 bg-[#09090b] p-4">
+              <div className="text-xs font-mono text-zinc-400 font-bold uppercase mb-2">KEYWORD MATCHING NODES</div>
+              <div className="space-y-2">
+                {[
+                  { key: 'Python & SQL', match: '100% MATCH', color: 'text-emerald-400' },
+                  { key: 'Cloud Architecture (AWS)', match: 'TAILORED', color: 'text-orange-400' },
+                  { key: 'Cross-functional Leadership', match: 'VERIFIED', color: 'text-emerald-400' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center justify-between rounded bg-zinc-900 p-2 text-xs font-mono">
+                    <span className="text-zinc-300 font-semibold">{item.key}</span>
+                    <span className={`font-black ${item.color}`}>{item.match}</span>
+                  </div>
+                ))}
               </div>
-              <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                <FileText className="w-5 h-5 text-orange-400 mb-2" />
-                <div className="text-xs font-bold text-white">Cover Letter Generator</div>
-                <p className="text-[11px] text-zinc-400 mt-1">Tailored in 5 distinct styles using real background.</p>
+            </div>
+
+            {/* Diagnostic Score Card */}
+            <div className="md:col-span-3 rounded-xl border-2 border-orange-500/40 bg-orange-500/10 p-4 flex flex-col justify-between">
+              <div>
+                <div className="text-[10px] font-mono font-black text-orange-400 uppercase">DIAGNOSTIC METRICS</div>
+                <div className="mt-2 text-3xl font-black text-white">92%</div>
+                <div className="text-xs font-bold text-emerald-400">ATS COMPATIBLE</div>
               </div>
-              <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                <HelpCircle className="w-5 h-5 text-violet-400 mb-2" />
-                <div className="text-xs font-bold text-white">Interview Practice</div>
-                <p className="text-[11px] text-zinc-400 mt-1">HR, Technical, Behavioral questions & answer frameworks.</p>
-              </div>
-              <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                <Kanban className="w-5 h-5 text-blue-400 mb-2" />
-                <div className="text-xs font-bold text-white">Application Tracker</div>
-                <p className="text-[11px] text-zinc-400 mt-1">Kanban tracking for applications, interviews, & offers.</p>
+              <div className="mt-4 text-[10px] text-zinc-400 font-mono">
+                Clean formatting • Verified experience • Recruiter ready
               </div>
             </div>
           </div>
         </motion.div>
       </section>
 
-      {/* Universal Career Support Section */}
-      <section className="py-20 border-t border-zinc-900 bg-zinc-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-orange-500">Universal Career Engine</h2>
-            <p className="text-3xl font-extrabold text-white mt-2">Built for IT & Non-IT Professions</p>
-            <p className="text-zinc-400 text-sm mt-2">
-              From Software Engineers & Data Scientists to Accountants, Nurses, Teachers, and Sales Executives.
+      {/* 6-CHAPTER STORY-DRIVEN SCROLL */}
+      <section className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+        <div className="mb-12 text-center">
+          <span className="font-mono text-xs font-black tracking-widest text-orange-500 uppercase">
+            THE CAREER STORYLINE
+          </span>
+          <h2 className="mt-2 text-3xl font-black text-white uppercase sm:text-5xl">
+            HOW YOUR STORY UNFOLDS
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <ComicPanel panelTag="CHAPTER 01" title="START WITH YOU" subtitle="Master Profile Engine">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Create a permanent Master Profile. Keep all your real achievements, degrees, and skills in one secure place that is never overwritten.
             </p>
-          </div>
+            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
+              • Fresher • Experienced • Career Changer
+            </div>
+          </ComicPanel>
 
-          <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { cat: 'IT & Software', roles: 'Developers, Data Analysts, DevOps, UI/UX' },
-              { cat: 'Finance & Accounting', roles: 'Accountants, Financial Analysts, Auditors' },
-              { cat: 'Healthcare & Nursing', roles: 'Nurses, Healthcare Admins, Clinical Specialists' },
-              { cat: 'Sales & Marketing', roles: 'Executives, Managers, Digital Marketers' },
-              { cat: 'Education & Teaching', roles: 'Teachers, Lecturers, Academic Researchers' },
-              { cat: 'Engineering & Construction', roles: 'Mechanical, Civil, Electrical Engineers' },
-              { cat: 'HR & Operations', roles: 'Recruiters, HR Executives, Logistics Leads' },
-              { cat: 'Freshers & Graduates', roles: 'Interns, Students, Academic Honors' },
-            ].map((item, idx) => (
-              <div key={idx} className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
-                <div className="text-xs font-bold text-white">{item.cat}</div>
-                <div className="text-[11px] text-zinc-400 mt-1 leading-snug">{item.roles}</div>
-              </div>
-            ))}
-          </div>
+          <ComicPanel panelTag="CHAPTER 02" title="FIND YOUR TARGET" subtitle="Job Description Extractor">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Paste any job description from LinkedIn, Indeed, or company sites. AI instantly extracts required skills, tools, and responsibilities.
+            </p>
+            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
+              • Technical • Soft Skills • Hard Requirements
+            </div>
+          </ComicPanel>
+
+          <ComicPanel panelTag="CHAPTER 03" title="CONNECT THE DOTS" subtitle="Anti-Hallucination AI">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Our AI connects target job requirements with your genuine background. Zero fake employers, zero invented degrees.
+            </p>
+            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
+              • Truth-Bound • Verified Experience
+            </div>
+          </ComicPanel>
+
+          <ComicPanel panelTag="CHAPTER 04" title="BUILD PERFECT VERSION" subtitle="Interactive Editor">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Edit bullets, accept or reject AI improvements in real time, and switch between 15 professional ATS templates with zero content loss.
+            </p>
+            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
+              • 15 Templates • Live Zoom Preview
+            </div>
+          </ComicPanel>
+
+          <ComicPanel panelTag="CHAPTER 05" title="MAKE IT ATS-READY" subtitle="Futuristic ATS Scanner">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Pass your resume through our top-to-bottom laser beam scanner. Review 3 separate diagnostic scores for Match, ATS, and Quality.
+            </p>
+            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
+              • 3 Scores • Issue Detector
+            </div>
+          </ComicPanel>
+
+          <ComicPanel panelTag="CHAPTER 06" title="GO GET THE INTERVIEW" subtitle="Complete Application Package">
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Download clean PDF and DOCX files. Generate matching cover letters, practice targeted interview questions, and track applications.
+            </p>
+            <div className="mt-4 font-mono text-[11px] font-bold text-orange-400 uppercase">
+              • PDF / DOCX • Cover Letter • Interview
+            </div>
+          </ComicPanel>
         </div>
       </section>
 
-      {/* 15 ATS Templates Section */}
-      <section className="py-20 border-t border-zinc-900 bg-zinc-950/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-orange-500">15 ATS & Professional Templates</h2>
-            <p className="text-3xl font-extrabold text-white mt-2">Clean, Parsing-Tested Layouts</p>
-            <p className="text-zinc-400 text-sm mt-2">Switch templates instantly in live preview with zero content loss.</p>
+      {/* ANIMATED CAREER UNIVERSE CAROUSEL */}
+      <section className="border-t-2 border-orange-500/20 bg-[#0c0c10] py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <span className="font-mono text-xs font-black tracking-widest text-orange-500 uppercase">
+              UNIVERSAL CAREER SUPPORT
+            </span>
+            <h2 className="mt-2 text-3xl font-black text-white uppercase sm:text-4xl">
+              WHATEVER THE ROLE. BUILD THE RESUME FOR IT.
+            </h2>
           </div>
 
-          <div className="mt-12 grid grid-cols-2 md:grid-cols-5 gap-3">
-            {[
-              'ATS Classic', 'ATS Executive', 'ATS Modern', 'Minimalist', 'Corporate',
-              'Technical Grid', 'Data Analyst', 'Academic', 'Healthcare', 'Creative',
-              'Fresher Graduate', 'Management', 'Sales & Marketing', 'Operations', 'Compact'
-            ].map((t) => (
-              <div key={t} className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-center hover:border-orange-500/50 transition-colors">
-                <div className="w-full h-24 bg-zinc-950 rounded border border-zinc-800 mb-2 flex flex-col p-2 space-y-1">
-                  <div className="h-2 w-2/3 bg-zinc-700 rounded" />
-                  <div className="h-1.5 w-full bg-zinc-800 rounded" />
-                  <div className="h-1.5 w-4/5 bg-zinc-800 rounded" />
+          <div className="mt-10 flex overflow-x-auto pb-6 space-x-4 scrollbar-none">
+            {careerWorlds.map((world, idx) => (
+              <button
+                key={idx}
+                onClick={() => setActiveUniverse(idx)}
+                className={`flex-none w-72 rounded-xl border-2 p-5 text-left transition-all ${
+                  activeUniverse === idx
+                    ? 'border-orange-500 bg-orange-500/10 shadow-[0_0_20px_rgba(249,115,22,0.3)]'
+                    : 'border-zinc-800 bg-[#09090b] hover:border-zinc-700'
+                }`}
+              >
+                <div className="font-mono text-[10px] font-black text-orange-400 uppercase">CAREER DISCIPLINE 0{idx + 1}</div>
+                <h3 className="mt-1 font-extrabold text-white text-base">{world.title}</h3>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {world.skills.map((s, si) => (
+                    <span key={si} className="rounded bg-zinc-800 px-2 py-0.5 text-[10px] font-mono text-zinc-300">
+                      {s}
+                    </span>
+                  ))}
                 </div>
-                <span className="text-xs font-semibold text-zinc-300">{t}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
       </section>
 
-      {/* FAQ */}
-      <section className="py-20 border-t border-zinc-900 bg-zinc-950">
-        <div className="max-w-4xl mx-auto px-4">
-          <h2 className="text-3xl font-extrabold text-white text-center mb-12">Frequently Asked Questions</h2>
-          <div className="space-y-4">
-            {[
-              { q: 'What is the Master Profile?', a: 'Your Master Profile is a permanent single repository of your entire background. Tailoring a resume creates a separate version and never overwrites your Master Profile.' },
-              { q: 'Does ResumeForge AI invent fake credentials?', a: 'Never. Our AI operates under strict anti-hallucination guardrails and only uses skills, experience, and projects supported by your background.' },
-              { q: 'How do the 3 metrics differ?', a: 'Job Match measures relevance to the target job description. ATS Compatibility measures structural and parsing validity. Resume Quality measures writing clarity and verb impact.' },
-              { q: 'Can I export to DOCX and PDF?', a: 'Yes! High-fidelity PDF exports and native Microsoft Word (.docx) files are both fully supported.' },
-            ].map((faq, idx) => (
-              <div key={idx} className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <HelpCircle className="w-4 h-4 text-orange-400" />
-                  {faq.q}
-                </h3>
-                <p className="text-xs text-zinc-400 mt-2 leading-relaxed">{faq.a}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-20 border-t border-zinc-900 bg-gradient-to-b from-zinc-950 to-zinc-900 text-center">
-        <div className="max-w-4xl mx-auto px-4">
-          <h2 className="text-4xl font-extrabold text-white">Start Building Your Resume Today</h2>
-          <p className="text-zinc-400 mt-4 max-w-xl mx-auto text-base">
-            Join job seekers creating job-tailored resumes, cover letters, and interview preparation workspace in seconds.
+      {/* CTA SECTION */}
+      <section className="relative border-t-2 border-orange-500/20 bg-[#09090b] py-24 text-center">
+        <div className="mx-auto max-w-4xl px-4">
+          <h2 className="text-4xl font-black text-white uppercase sm:text-6xl">
+            YOUR STORY DESERVES MORE THAN A GENERIC RESUME.
+          </h2>
+          <p className="mt-4 text-zinc-400 font-medium text-base sm:text-lg">
+            Build it. Tailor it. Optimize it. Apply.
           </p>
-          <div className="mt-8">
+          <div className="mt-10">
             <Link
-              href="/register"
-              className="inline-flex items-center gap-2 px-8 py-4 rounded-xl font-extrabold text-black bg-orange-500 hover:bg-orange-400 shadow-xl shadow-orange-500/20 text-base transition-transform transform hover:scale-105"
+              href="/resumes/create"
+              data-cursor="START"
+              className="inline-flex items-center justify-center gap-3 rounded-xl border-2 border-orange-500 bg-orange-500 px-10 py-5 font-black text-black text-base tracking-widest uppercase shadow-[0_0_30px_rgba(249,115,22,0.6)] hover:bg-orange-400 hover:scale-105 transition-all"
             >
-              Get Started for Free <ArrowRight className="w-5 h-5" />
+              <span>ENTER THE EXPERIENCE</span>
+              <ArrowRight className="h-6 w-6" />
             </Link>
           </div>
         </div>

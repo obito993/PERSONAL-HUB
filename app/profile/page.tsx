@@ -74,40 +74,41 @@ export default function MasterProfilePage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800 pb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b-2 border-orange-500/20 pb-6">
         <div>
-          <div className="text-xs font-bold text-orange-500 uppercase tracking-wider flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" /> Permanent Master Profile
+          <div className="font-mono text-xs font-black text-orange-500 uppercase tracking-widest flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" /> PERMANENT MASTER PROFILE REPOSITORY
           </div>
-          <h1 className="text-3xl font-extrabold text-white mt-1">Single Source of Truth</h1>
-          <p className="text-xs text-zinc-400 mt-1 max-w-xl">
-            Enter your professional details once. Tailored resumes generate separate versions and <span className="text-orange-400 font-semibold">NEVER</span> overwrite your Master Profile.
+          <h1 className="text-3xl sm:text-4xl font-black text-white uppercase mt-1">SINGLE SOURCE OF TRUTH</h1>
+          <p className="text-xs text-zinc-400 mt-1 max-w-xl font-mono">
+            Enter your professional details once. Tailored resumes generate separate versions and <span className="text-orange-400 font-bold">NEVER</span> overwrite your Master Profile.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {notification && <span className="text-xs text-emerald-400 font-medium animate-pulse">{notification}</span>}
+          {notification && <span className="text-xs text-emerald-400 font-bold font-mono animate-pulse">{notification}</span>}
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-400 text-black font-extrabold text-sm shadow-xl shadow-orange-500/20 flex items-center gap-2 transition-transform transform hover:scale-105"
+            data-cursor="SAVE"
+            className="px-6 py-3.5 rounded-xl border-2 border-orange-500 bg-orange-500 text-black font-black text-xs uppercase shadow-[0_0_20px_rgba(249,115,22,0.4)] flex items-center gap-2 hover:bg-orange-400 transition-all"
           >
             <Save className="w-4 h-4 stroke-[2.5]" />
-            <span>{saving ? 'Saving...' : 'Save Master Profile'}</span>
+            <span>{saving ? 'SAVING PROFILE...' : 'SAVE MASTER PROFILE'}</span>
           </button>
         </div>
       </div>
 
       {/* User Mode Switcher Banner */}
-      <div className="p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="p-5 rounded-xl bg-[#0d0d12] comic-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider block">Career Profile Mode</span>
-          <p className="text-xs text-zinc-400 mt-0.5">
+          <span className="font-mono text-xs font-black text-orange-400 uppercase tracking-wider block">USER CAREER MODE</span>
+          <p className="text-xs text-zinc-400 mt-0.5 font-medium">
             Adapts AI prioritization across Freshers, Experienced professionals, and Career Changers.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+        <div className="flex items-center gap-2 bg-[#09090b] p-1 rounded-lg border border-orange-500/30">
           {[
             { id: 'FRESHER', label: 'Fresher / Student' },
             { id: 'EXPERIENCED', label: 'Experienced' },
@@ -116,9 +117,9 @@ export default function MasterProfilePage() {
             <button
               key={mode.id}
               onClick={() => setProfile({ ...profile, userMode: mode.id as UserCareerMode })}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`px-3.5 py-2 rounded text-xs font-mono font-black uppercase transition-all ${
                 profile.userMode === mode.id
-                  ? 'bg-orange-500 text-black shadow-md shadow-orange-500/20'
+                  ? 'bg-orange-500 text-black shadow-[0_0_10px_rgba(249,115,22,0.4)]'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -128,17 +129,17 @@ export default function MasterProfilePage() {
         </div>
       </div>
 
-      {/* Workspace Tabs */}
+      {/* 6-CHAPTER WORKSPACE TABS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Navigation Tabs Bar */}
-        <div className="lg:col-span-3 space-y-1">
+        <div className="lg:col-span-3 space-y-1 font-mono">
           {[
-            { id: 'personal', label: 'Personal & Career', icon: User },
-            { id: 'experience', label: 'Work History', icon: Briefcase },
-            { id: 'education', label: 'Education & Honors', icon: GraduationCap },
-            { id: 'projects', label: 'Projects & Portfolios', icon: FolderGit2 },
-            { id: 'skills', label: 'Skills & Tools', icon: Sparkles },
-            { id: 'extras', label: 'Certifications & Extras', icon: Award },
+            { id: 'personal', tag: 'CH 01', label: 'Who Are You?', icon: User },
+            { id: 'experience', tag: 'CH 02', label: 'Where Have You Worked?', icon: Briefcase },
+            { id: 'education', tag: 'CH 03', label: 'What Have You Learned?', icon: GraduationCap },
+            { id: 'projects', tag: 'CH 04', label: 'What Have You Built?', icon: FolderGit2 },
+            { id: 'skills', tag: 'CH 05', label: 'What Can You Do?', icon: Sparkles },
+            { id: 'extras', tag: 'CH 06', label: 'Certifications & Awards', icon: Award },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -146,14 +147,17 @@ export default function MasterProfilePage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center justify-between px-4 py-3 rounded border text-xs font-black uppercase transition-all ${
                   active
-                    ? 'bg-zinc-800 text-orange-400 border border-orange-500/30'
-                    : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
+                    ? 'border-orange-500 bg-orange-500/20 text-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.2)]'
+                    : 'border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-white'
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                <span>{tab.label}</span>
+                <div className="flex items-center gap-2.5">
+                  <Icon className="w-4 h-4 text-orange-400" />
+                  <span>{tab.label}</span>
+                </div>
+                <span className="text-[10px] text-orange-500 font-bold">{tab.tag}</span>
               </button>
             );
           })}
