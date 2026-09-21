@@ -2,123 +2,278 @@
 
 @layer base {
   :root {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
+    --bg-paper: #F7F4EA;
+    --ink-black: #050505;
+    --comic-yellow: #FFD83D;
+    --comic-red: #FF5A5F;
+    --comic-purple: #B9A7FF;
+    --comic-blue: #5DADE2;
+    --comic-cream: #FFFDF5;
+    --comic-white: #FFFFFF;
+    --comic-gray: #E2DFD2;
+    --comic-dark-card: #18181B;
   }
 
   body {
-    background-color: #09090b;
-    color: #f4f4f5;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--bg-paper);
+    color: var(--ink-black);
+    font-family: var(--font-body, system-ui, -apple-system, sans-serif);
     overflow-x: hidden;
+    position: relative;
+    min-height: 100vh;
+  }
+
+  /* Paper texture & Halftone dots background overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background-image: 
+      radial-gradient(var(--ink-black) 0.75px, transparent 0.75px),
+      linear-gradient(135deg, rgba(5, 5, 5, 0.02) 25%, transparent 25%, transparent 50%, rgba(5, 5, 5, 0.02) 50%, rgba(5, 5, 5, 0.02) 75%, transparent 75%, transparent);
+    background-size: 16px 16px, 32px 32px;
+    background-position: 0 0, 0 0;
+    opacity: 0.12;
+  }
+
+  ::selection {
+    background-color: var(--comic-yellow);
+    color: var(--ink-black);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--bg-paper);
+    border-left: 2px solid var(--ink-black);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--comic-yellow);
+    border: 2px solid var(--ink-black);
+    box-shadow: 2px 2px 0 var(--ink-black);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--comic-red);
   }
 }
 
-/* Halftone and Grid Patterns */
-.bg-halftone {
-  background-image: radial-gradient(rgba(249, 115, 22, 0.15) 1px, transparent 1px);
-  background-size: 16px 16px;
+/* Comic Utility Classes */
+.comic-border-sm {
+  border: 2px solid #050505;
 }
 
-.bg-comic-grid {
-  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 32px 32px;
-}
-
-/* Comic Panel Borders & Shadow Glows */
 .comic-border {
-  border: 2px solid rgba(249, 115, 22, 0.35);
-  box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.8), 0 0 15px rgba(249, 115, 22, 0.15);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 3px solid #050505;
 }
 
-.comic-border:hover {
-  border-color: rgba(249, 115, 22, 0.9);
-  box-shadow: 6px 6px 0px rgba(249, 115, 22, 0.25), 0 0 25px rgba(249, 115, 22, 0.35);
-  transform: translateY(-2px);
+.comic-border-lg {
+  border: 4px solid #050505;
 }
 
-.comic-border-solid {
-  border: 2px solid #f97316;
-  box-shadow: 4px 4px 0px #000000;
+.shadow-comic-sm {
+  box-shadow: 3px 3px 0px #050505;
 }
 
-/* Glow Effects */
-.glow-orange {
-  box-shadow: 0 0 25px rgba(249, 115, 22, 0.4);
+.shadow-comic {
+  box-shadow: 5px 5px 0px #050505;
 }
 
-.text-glow-orange {
-  text-shadow: 0 0 12px rgba(249, 115, 22, 0.6);
+.shadow-comic-lg {
+  box-shadow: 8px 8px 0px #050505;
 }
 
-/* Glassmorphism */
-.glass-panel {
-  background: rgba(15, 15, 18, 0.82);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(249, 115, 22, 0.2);
+.shadow-comic-yellow {
+  box-shadow: 5px 5px 0px #FFD83D, 5px 5px 0px 2px #050505;
 }
 
-.glass-card {
-  background: rgba(24, 24, 27, 0.7);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(63, 63, 70, 0.5);
+.shadow-comic-red {
+  box-shadow: 5px 5px 0px #FF5A5F, 5px 5px 0px 2px #050505;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.shadow-comic-purple {
+  box-shadow: 5px 5px 0px #B9A7FF, 5px 5px 0px 2px #050505;
 }
 
-::-webkit-scrollbar-track {
-  background: #09090b;
+/* Comic Button Press Effect */
+.btn-comic {
+  border: 3px solid #050505;
+  box-shadow: 4px 4px 0px #050505;
+  transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
 }
 
-::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 4px;
+.btn-comic:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px #050505;
 }
 
-/* Comic Speech Bubble Tails */
+.btn-comic:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px #050505;
+}
+
+.btn-comic-yellow {
+  background-color: #FFD83D;
+  color: #050505;
+}
+
+.btn-comic-red {
+  background-color: #FF5A5F;
+  color: #FFFFFF;
+}
+
+.btn-comic-purple {
+  background-color: #B9A7FF;
+  color: #050505;
+}
+
+.btn-comic-blue {
+  background-color: #5DADE2;
+  color: #050505;
+}
+
+.btn-comic-white {
+  background-color: #FFFFFF;
+  color: #050505;
+}
+
+/* Panel & Card Styles */
+.comic-card {
+  background-color: #FFFFFF;
+  border: 3px solid #050505;
+  box-shadow: 5px 5px 0px #050505;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.comic-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 8px 8px 0px #050505;
+}
+
+.comic-card-cream {
+  background-color: #FFFDF5;
+  border: 3px solid #050505;
+  box-shadow: 5px 5px 0px #050505;
+}
+
+.comic-card-yellow {
+  background-color: #FFD83D;
+  border: 3px solid #050505;
+  box-shadow: 5px 5px 0px #050505;
+}
+
+.comic-card-purple {
+  background-color: #B9A7FF;
+  border: 3px solid #050505;
+  box-shadow: 5px 5px 0px #050505;
+}
+
+.comic-card-red {
+  background-color: #FF5A5F;
+  color: #FFFFFF;
+  border: 3px solid #050505;
+  box-shadow: 5px 5px 0px #050505;
+}
+
+/* Comic Speech Bubble */
+.speech-bubble {
+  position: relative;
+  background: #FFFFFF;
+  border: 3px solid #050505;
+  box-shadow: 4px 4px 0px #050505;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+}
+
 .speech-bubble-bottom::after {
   content: '';
   position: absolute;
-  bottom: -10px;
+  bottom: -16px;
   left: 24px;
-  border-width: 10px 10px 0;
+  border-width: 16px 14px 0 0;
   border-style: solid;
-  border-color: #f97316 transparent;
+  border-color: #050505 transparent transparent transparent;
   display: block;
   width: 0;
 }
 
-.speech-bubble-left::after {
+.speech-bubble-bottom::before {
   content: '';
   position: absolute;
-  top: 50%;
-  left: -10px;
-  transform: translateY(-50%);
-  border-width: 8px 10px 8px 0;
+  bottom: -10px;
+  left: 26px;
+  border-width: 12px 10px 0 0;
   border-style: solid;
-  border-color: transparent #f97316 transparent transparent;
+  border-color: #FFFFFF transparent transparent transparent;
   display: block;
   width: 0;
+  z-index: 1;
 }
 
-/* Comic Action Badge Pop Keyframes */
-@keyframes comicPop {
-  0% { transform: scale(0.3) rotate(-10deg); opacity: 0; }
-  60% { transform: scale(1.15) rotate(5deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+/* Comic Badge & Sticker */
+.comic-sticker {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  font-weight: 800;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 2px solid #050505;
+  box-shadow: 3px 3px 0px #050505;
+  transform: rotate(-2deg);
 }
 
-.animate-comic-pop {
-  animation: comicPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+.comic-sticker-yellow {
+  background-color: #FFD83D;
+  color: #050505;
 }
 
-/* 3D Perspective Container */
-.perspective-1000 {
-  perspective: 1000px;
+.comic-sticker-red {
+  background-color: #FF5A5F;
+  color: #FFFFFF;
+}
+
+.comic-sticker-purple {
+  background-color: #B9A7FF;
+  color: #050505;
+}
+
+.comic-sticker-blue {
+  background-color: #5DADE2;
+  color: #050505;
+}
+
+/* Comic Inputs */
+.comic-input {
+  background-color: #FFFFFF;
+  border: 3px solid #050505;
+  box-shadow: 3px 3px 0px #050505;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  color: #050505;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.comic-input:focus {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0px #050505;
+  background-color: #FFFDF5;
+}
+
+/* Comic Halftone Dot Pattern Box */
+.halftone-box {
+  background-image: radial-gradient(#050505 1px, transparent 1px);
+  background-size: 8px 8px;
 }

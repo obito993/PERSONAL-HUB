@@ -1,0 +1,16 @@
+{
+  "name": "DEION HUB — Your Everyday Internet Toolbox",
+  "short_name": "DeionHub",
+  "description": "Everyday calculators, text tools, developer utilities, AI tools, and productivity features in one comic book operating system.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F4EA",
+  "theme_color": "#FFD83D",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

@@ -3,22 +3,26 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Sparkles, ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ArrowRight, ShieldCheck, Zap, Lock, Mail, AlertCircle } from 'lucide-react';
+import { sound } from '@/lib/sound';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [accessGranted, setAccessGranted] = useState(false);
+  const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(null);
     setLoading(true);
+    sound.playPop();
 
     try {
-      const res = await fetch('/api/auth/signin', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -27,85 +31,126 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || 'Failed to sign in.');
+        setError(data.error || 'Login failed. Please check credentials.');
         setLoading(false);
         return;
       }
 
-      router.push('/dashboard');
-      router.refresh();
+      setAccessGranted(true);
+      sound.playLevelUp();
+      setTimeout(() => {
+        router.push('/');
+        router.refresh();
+      }, 1000);
     } catch {
-      setError('An unexpected error occurred.');
+      setError('Network error. Please try again.');
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4 py-12 bg-zinc-950">
-      <div className="w-full max-w-md p-8 rounded-2xl bg-zinc-900/80 border border-zinc-800 shadow-2xl backdrop-blur-xl">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-400 mb-3">
-            <Sparkles className="w-6 h-6" />
+    <div className="min-h-[80vh] flex items-center justify-center p-4">
+      
+      {/* Access Granted Overlay Animation */}
+      {accessGranted ? (
+        <motion.div
+          initial={{ scale: 0.5, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="bg-[#FFD83D] comic-border-lg shadow-comic-lg p-12 text-center space-y-4 max-w-md w-full"
+        >
+          <div className="comic-sticker comic-sticker-red text-base font-black animate-bounce mx-auto">
+            POW! ACCESS GRANTED!
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Welcome back</h1>
-          <p className="text-xs text-zinc-400 mt-1">Sign in to access your resumes and job analyses</p>
-        </div>
-
-        {error && (
-          <div className="mb-6 p-3 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <h2 className="font-black text-4xl uppercase">WELCOME BACK HERO!</h2>
+          <p className="font-mono text-xs font-bold text-gray-800">
+            Initializing your personalized PERSONAL HUB dashboard...
+          </p>
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ scale: 0.9, y: 20, opacity: 0 }}
+          animate={{ scale: 1, y: 0, opacity: 1 }}
+          transition={{ type: 'spring', damping: 15 }}
+          className="bg-white comic-border-lg shadow-comic-lg p-6 sm:p-10 max-w-md w-full space-y-6 relative overflow-hidden"
+        >
+          {/* Top Brand Sticker */}
+          <div className="flex items-center justify-between border-b-3 border-black pb-3">
+            <div className="bg-[#FFD83D] comic-border-sm px-3 py-1 font-black text-base flex items-center gap-1.5">
+              <Zap className="w-5 h-5" />
+              <span>PERSONAL HUB AUTH</span>
+            </div>
+            <span className="comic-sticker comic-sticker-red text-[10px]">
+              AUTHENTICATION
+            </span>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1.5">Email Address</label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-3" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@company.com"
-                className="w-full pl-9 pr-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-orange-500 transition-colors"
-              />
+          <div className="space-y-1">
+            <h1 className="font-black text-3xl uppercase tracking-tight">WELCOME BACK!</h1>
+            {/* Speech Bubble */}
+            <div className="speech-bubble text-xs font-extrabold bg-[#FFFDF5] inline-block">
+              &quot;Enter your credentials to access your hero workspace!&quot;
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1.5">Password</label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-zinc-500 absolute left-3 top-3" />
+          {error && (
+            <div className="bg-red-100 comic-border-sm p-3 text-xs font-black text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-black mb-1 uppercase flex items-center gap-1">
+                <Mail className="w-3.5 h-3.5" />
+                <span>EMAIL ADDRESS</span>
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="hero@example.com"
+                required
+                className="comic-input w-full text-sm font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black mb-1 uppercase flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5" />
+                <span>PASSWORD</span>
+              </label>
               <input
                 type="password"
-                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-9 pr-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-orange-500 transition-colors"
+                required
+                className="comic-input w-full text-sm font-bold"
               />
             </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-comic btn-comic-yellow w-full py-3 text-sm flex items-center justify-center gap-2 font-black"
+            >
+              <span>{loading ? 'AUTHENTICATING...' : 'ENTER THE HUB'}</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </form>
+
+          <div className="pt-4 border-t-2 border-dashed border-black/30 text-center text-xs font-bold space-y-2">
+            <div>
+              Don&apos;t have an account yet?{' '}
+              <Link href="/signup" className="text-[#FF5A5F] hover:underline font-black">
+                CREATE ACCOUNT
+              </Link>
+            </div>
           </div>
+        </motion.div>
+      )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-400 text-black font-extrabold text-sm shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-            {!loading && <ArrowRight className="w-4 h-4" />}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center text-xs text-zinc-400">
-          Don't have an account?{' '}
-          <Link href="/register" className="text-orange-400 font-semibold hover:underline">
-            Create one free
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }
