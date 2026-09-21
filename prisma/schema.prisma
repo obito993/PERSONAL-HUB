@@ -1,4 +1,4 @@
-// Prisma Schema for ResumeForge AI
+// Prisma Schema for ResumeForge AI Platform
 
 generator client {
   provider = "prisma-client-js"
@@ -10,16 +10,60 @@ datasource db {
 }
 
 model User {
-  id             String           @id @default(uuid())
-  name           String
-  email          String           @unique
-  password       String
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  resumes        Resume[]
+  id              String           @id @default(uuid())
+  name            String
+  email           String           @unique
+  password        String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  masterProfile   MasterProfile?
+  resumes         Resume[]
   jobDescriptions JobDescription[]
-  analyses       ResumeAnalysis[]
+  analyses        ResumeAnalysis[]
   tailoredResumes TailoredResume[]
+  coverLetters    CoverLetter[]
+  interviewPrep   InterviewSession[]
+  applications    JobApplication[]
+}
+
+model MasterProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Personal Info
+  fullName       String
+  email          String
+  phone          String
+  location       String
+  linkedin       String?
+  github         String?
+  website        String?
+  
+  // Career Info
+  targetTitle    String
+  userMode       String   @default("EXPERIENCED") // FRESHER | EXPERIENCED | CAREER_CHANGER
+  industry       String?
+  yearsOfExp     Int      @default(0)
+  summary        String
+  
+  // JSON arrays for sections
+  experience     String   // JSON string of WorkExperience[]
+  education      String   // JSON string of Education[]
+  projects       String   // JSON string of Project[]
+  skills         String   // JSON string of { technical, soft, tools, all }
+  certifications String   // JSON string of Certification[]
+  awards         String   // JSON string array
+  achievements   String   // JSON string array
+  volunteer      String   // JSON string array
+  leadership     String   // JSON string array
+  publications   String   // JSON string array
+  languages      String   // JSON string array
+  interests      String   // JSON string array
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Resume {
@@ -47,32 +91,40 @@ model JobDescription {
   structuredData String           // JSON string of ParsedJob
   createdAt      DateTime         @default(now())
   analyses       ResumeAnalysis[]
+  coverLetters   CoverLetter[]
+  interviewSessions InterviewSession[]
+  applications   JobApplication[]
 }
 
 model ResumeAnalysis {
-  id               String           @id @default(uuid())
-  userId           String
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resumeId         String
-  resume           Resume           @relation(fields: [resumeId], references: [id], onDelete: Cascade)
-  jobDescriptionId String
-  jobDescription   JobDescription   @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  id                   String           @id @default(uuid())
+  userId               String
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeId             String
+  resume               Resume           @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  jobDescriptionId     String
+  jobDescription       JobDescription   @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
   
-  overallScore     Int
-  categoryScores   String           // JSON string: { skills, keywords, experience, education, responsibilities }
-  matchingSkills   String           // JSON string array
-  missingSkills    String           // JSON string array
-  partialSkills    String           // JSON string array
-  matchingKeywords String           // JSON string array
-  missingKeywords  String           // JSON string array of details
-  partialKeywords  String           // JSON string array
-  resumeIssues     String           // JSON string array of issues
-  recommendations  String           // JSON string array
-  evidence         String?          // JSON string
+  // 3 Separate Diagnostic Metrics
+  jobMatchScore        Int              @default(80)
+  atsCompatibilityScore Int              @default(88)
+  resumeQualityScore   Int              @default(85)
+  overallScore         Int
   
-  userConfirmedSkills String?       // JSON string array of user confirmed missing skills
-  createdAt        DateTime         @default(now())
-  tailoredResumes  TailoredResume[]
+  categoryScores       String           // JSON string: { skills, keywords, experience, education, responsibilities }
+  matchingSkills       String           // JSON string array
+  missingSkills        String           // JSON string array
+  partialSkills        String           // JSON string array
+  matchingKeywords     String           // JSON string array
+  missingKeywords      String           // JSON string array of details
+  partialKeywords      String           // JSON string array
+  resumeIssues         String           // JSON string array of issues
+  recommendations      String           // JSON string array
+  evidence             String?          // JSON string
+  
+  userConfirmedSkills  String?          // JSON string array of user confirmed missing skills
+  createdAt            DateTime         @default(now())
+  tailoredResumes      TailoredResume[]
 }
 
 model TailoredResume {
@@ -91,6 +143,7 @@ model TailoredResume {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   versions     ResumeVersion[]
+  applications JobApplication[]
 }
 
 model ResumeVersion {
@@ -101,4 +154,71 @@ model ResumeVersion {
   content          String         // JSON string
   changes          String         // JSON string
   createdAt        DateTime       @default(now())
+}
+
+model CoverLetter {
+  id               String         @id @default(uuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobDescriptionId String
+  jobDescription   JobDescription @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  
+  company          String
+  jobTitle         String
+  style            String         @default("Professional") // Professional | Concise | Modern | Formal | Entry-level
+  content          String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  applications     JobApplication[]
+}
+
+model InterviewSession {
+  id               String              @id @default(uuid())
+  userId           String
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobDescriptionId String
+  jobDescription   JobDescription      @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  
+  jobTitle         String
+  company          String
+  questions        InterviewQuestion[]
+  createdAt        DateTime            @default(now())
+}
+
+model InterviewQuestion {
+  id           String           @id @default(uuid())
+  sessionId    String
+  session      InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  category     String           // HR | Technical | Behavioral | Situational
+  question     String
+  rationale    String           // Why they ask this
+  structure    String           // Suggested answer structure
+  userAnswer   String?          // User practice answer
+}
+
+model JobApplication {
+  id               String          @id @default(uuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobDescriptionId String?
+  jobDescription   JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+  tailoredResumeId String?
+  tailoredResume   TailoredResume? @relation(fields: [tailoredResumeId], references: [id], onDelete: SetNull)
+  coverLetterId    String?
+  coverLetter      CoverLetter?    @relation(fields: [coverLetterId], references: [id], onDelete: SetNull)
+  
+  company          String
+  jobTitle         String
+  location         String?
+  jobUrl           String?
+  salary           String?
+  status           String          @default("APPLIED") // SAVED | APPLIED | SCREENING | INTERVIEW | TECHNICAL | OFFER | REJECTED | WITHDRAWN
+  dateApplied      DateTime        @default(now())
+  interviewDate    DateTime?
+  followUpDate     DateTime?
+  recruiter        String?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 }

@@ -231,6 +231,9 @@ export function calculateMatchAnalysis(resume: ParsedResume, job: ParsedJob): Ma
 
   return {
     overallScore,
+    jobMatchScore: overallScore,
+    atsCompatibilityScore: overallScore,
+    resumeQualityScore: overallScore,
     categoryScores: {
       skills: skillsScore,
       keywords: keywordScore,

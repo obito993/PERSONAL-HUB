@@ -65,11 +65,51 @@ export interface ParsedResume {
   links: string[];
 }
 
+export type UserCareerMode = 'FRESHER' | 'EXPERIENCED' | 'CAREER_CHANGER';
+
+export interface MasterProfileData {
+  id?: string;
+  userId?: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  location: string;
+  linkedin?: string;
+  github?: string;
+  website?: string;
+  
+  targetTitle: string;
+  userMode: UserCareerMode;
+  industry?: string;
+  yearsOfExp: number;
+  summary: string;
+  
+  experience: WorkExperience[];
+  education: Education[];
+  projects: Project[];
+  skills: {
+    technical: string[];
+    soft: string[];
+    tools: string[];
+    all: string[];
+  };
+  certifications: Certification[];
+  awards: string[];
+  achievements: string[];
+  volunteer: string[];
+  leadership: string[];
+  publications: string[];
+  languages: string[];
+  interests: string[];
+}
+
 export interface ParsedJob {
   title: string;
   company: string;
   description: string;
   url?: string;
+  industry?: string;
+  seniority?: string;
   requiredSkills: string[];
   preferredSkills: string[];
   technicalSkills: string[];
@@ -106,7 +146,18 @@ export interface ResumeIssue {
   suggestedFix: string;
 }
 
+export interface DiagnosticMetrics {
+  jobMatchScore: number;
+  atsCompatibilityScore: number;
+  resumeQualityScore: number;
+  overallScore: number;
+}
+
 export interface MatchAnalysis {
+  id?: string;
+  jobMatchScore: number;
+  atsCompatibilityScore: number;
+  resumeQualityScore: number;
   overallScore: number;
   categoryScores: CategoryScores;
   matchingSkills: string[];
@@ -118,6 +169,8 @@ export interface MatchAnalysis {
   resumeIssues: ResumeIssue[];
   recommendations: string[];
   userConfirmedSkills?: string[];
+  job?: ParsedJob;
+  resume?: { id: string; name: string };
 }
 
 export interface ResumeChange {
@@ -128,6 +181,64 @@ export interface ResumeChange {
   newText: string;
   reason: string;
   status: 'accepted' | 'rejected' | 'pending';
+}
+
+export interface CoverLetterData {
+  id?: string;
+  jobDescriptionId?: string;
+  company: string;
+  jobTitle: string;
+  style: 'Professional' | 'Concise' | 'Modern' | 'Formal' | 'Entry-level';
+  content: string;
+  createdAt?: string;
+}
+
+export interface InterviewQuestionData {
+  id?: string;
+  category: 'HR' | 'Technical' | 'Behavioral' | 'Situational';
+  question: string;
+  rationale: string;
+  structure: string;
+  userAnswer?: string;
+}
+
+export interface InterviewSessionData {
+  id?: string;
+  jobDescriptionId?: string;
+  jobTitle: string;
+  company: string;
+  questions: InterviewQuestionData[];
+  createdAt?: string;
+}
+
+export type ApplicationStatus =
+  | 'SAVED'
+  | 'APPLIED'
+  | 'SCREENING'
+  | 'INTERVIEW'
+  | 'TECHNICAL'
+  | 'OFFER'
+  | 'REJECTED'
+  | 'WITHDRAWN';
+
+export interface JobApplicationData {
+  id?: string;
+  jobDescriptionId?: string;
+  tailoredResumeId?: string;
+  coverLetterId?: string;
+  company: string;
+  jobTitle: string;
+  location?: string;
+  jobUrl?: string;
+  salary?: string;
+  status: ApplicationStatus;
+  dateApplied: string;
+  interviewDate?: string;
+  followUpDate?: string;
+  recruiter?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface UserSession {

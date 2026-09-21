@@ -32,6 +32,9 @@ export async function POST(req: Request) {
     
     const analysis: MatchAnalysis = {
       overallScore: analysisRecord.overallScore,
+      jobMatchScore: analysisRecord.jobMatchScore,
+      atsCompatibilityScore: analysisRecord.atsCompatibilityScore,
+      resumeQualityScore: analysisRecord.resumeQualityScore,
       categoryScores: JSON.parse(analysisRecord.categoryScores),
       matchingSkills: JSON.parse(analysisRecord.matchingSkills),
       missingSkills: JSON.parse(analysisRecord.missingSkills),
