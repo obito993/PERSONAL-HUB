@@ -3,6 +3,8 @@ import { getAuthSession } from '@/lib/auth';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+const MAX_STORAGE_MB = parseInt(process.env.MAX_USER_STORAGE_MB || '1000', 10);
+const MAX_STORAGE_BYTES = MAX_STORAGE_MB * 1024 * 1024;
 
 export async function GET() {
   try {
@@ -25,6 +27,7 @@ export async function GET() {
         processingProgress: true,
         blobPathname: true,
         createdAt: true,
+        updatedAt: true,
         chapters: {
           select: {
             id: true,
@@ -37,7 +40,21 @@ export async function GET() {
       }
     });
 
-    return NextResponse.json({ documents: docs });
+    // Calculate real total storage used by authenticated user
+    const totalUsedBytes = docs.reduce((acc, d) => acc + (d.fileSize || 0), 0);
+    const availableBytes = Math.max(0, MAX_STORAGE_BYTES - totalUsedBytes);
+    const usedPercentage = Math.min(100, Math.round((totalUsedBytes / MAX_STORAGE_BYTES) * 100));
+
+    return NextResponse.json({
+      documents: docs,
+      storage: {
+        usedBytes: totalUsedBytes,
+        maxBytes: MAX_STORAGE_BYTES,
+        availableBytes,
+        usedPercentage,
+        maxMb: MAX_STORAGE_MB,
+      }
+    });
 
   } catch (err: any) {
     console.error('[API STUDY DOCUMENTS ERROR]', err);

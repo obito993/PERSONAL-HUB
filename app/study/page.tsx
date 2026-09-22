@@ -27,7 +27,10 @@ import {
   XCircle,
   Download,
   Menu,
-  X
+  X,
+  HardDrive,
+  AlertTriangle,
+  FolderOpen
 } from 'lucide-react';
 import { sound } from '@/lib/sound';
 
@@ -41,12 +44,24 @@ interface StudyChapter {
   keyPointsJson?: string;
 }
 
+interface StorageInfo {
+  usedBytes: number;
+  maxBytes: number;
+  availableBytes: number;
+  usedPercentage: number;
+  maxMb: number;
+}
+
 interface StudyDocument {
   id: string;
   title: string;
   fileName: string;
   fileSize: number;
   pageCount: number;
+  processingStatus?: string;
+  processingProgress?: number;
+  blobPathname?: string;
+  createdAt: string;
   chapters: StudyChapter[];
   progress: any[];
 }
@@ -88,9 +103,20 @@ function StudyPlatformContent() {
   const [activeDoc, setActiveDoc] = useState<StudyDocument | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<string>('ALL'); // 'ALL' or chapter ID
   const [activeMode, setActiveMode] = useState<ModeType>('SUMMARIZE');
-  
-  // UI & Loading
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
+
+  // Document Library & Search
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+
+  // Delete PDF Modal State
+  const [docToDelete, setDocToDelete] = useState<StudyDocument | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteStatus, setDeleteStatus] = useState('');
+
+  // UI & Real Upload Progress State
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number>(0);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isLoadingMode, setIsLoadingMode] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -126,12 +152,19 @@ function StudyPlatformContent() {
     try {
       const res = await fetch('/api/study/documents');
       const data = await res.json();
-      if (data.documents && data.documents.length > 0) {
+      if (data.documents) {
         setDocuments(data.documents);
-        const docToSelect = initialDocId 
-          ? data.documents.find((d: any) => d.id === initialDocId) || data.documents[0]
-          : data.documents[0];
-        fetchDocumentDetails(docToSelect.id);
+        if (data.storage) {
+          setStorageInfo(data.storage);
+        }
+        if (data.documents.length > 0) {
+          const docToSelect = initialDocId 
+            ? data.documents.find((d: any) => d.id === initialDocId) || data.documents[0]
+            : data.documents[0];
+          fetchDocumentDetails(docToSelect.id);
+        } else {
+          setActiveDoc(null);
+        }
       }
     } catch (err) {
       console.error('Error fetching study documents:', err);
@@ -151,29 +184,53 @@ function StudyPlatformContent() {
     }
   };
 
-  // Upload PDF Handler
+  // Upload PDF Handler with Real Progress & Storage Quota Verification
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
-    setUploadStatus('Extracting PDF text...');
+    setUploadPercent(0);
+    setUploadStatus('Preparing PDF upload...');
     sound.playPop();
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      setUploadStatus('Detecting semantic chapters...');
-      const res = await fetch('/api/study/upload', {
-        method: 'POST',
-        body: formData,
+      // Real progress tracking using XMLHttpRequest
+      const xhr = new XMLHttpRequest();
+      
+      const uploadPromise = new Promise<{ ok: boolean; status: number; data: any }>((resolve, reject) => {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setUploadPercent(percent);
+            setUploadStatus(`Uploading ${file.name}... ${percent}%`);
+            if (percent === 100) {
+              setUploadStatus('Extracting PDF text & detecting chapters...');
+            }
+          }
+        };
+
+        xhr.onload = () => {
+          try {
+            const json = JSON.parse(xhr.responseText);
+            resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: json });
+          } catch {
+            reject(new Error('Invalid server response'));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error uploading PDF'));
+        xhr.open('POST', '/api/study/upload');
+        xhr.send(formData);
       });
 
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        // Stale session: userId in JWT cookie doesn't match any user in the database
-        if (data.code === 'SESSION_USER_NOT_FOUND' || res.status === 401) {
+      const { ok, status, data } = await uploadPromise;
+
+      if (!ok || data.error) {
+        if (data.code === 'SESSION_USER_NOT_FOUND' || status === 401) {
           const confirmed = window.confirm(
             '⚠️ Your session has expired.\n\nYou need to log out and log back in to upload PDFs.\n\nClick OK to log out now.'
           );
@@ -183,6 +240,12 @@ function StudyPlatformContent() {
           }
           return;
         }
+
+        if (data.code === 'STORAGE_QUOTA_EXCEEDED') {
+          alert('⚠️ Not enough study storage available. Delete an existing PDF to free up space.');
+          return;
+        }
+
         alert(data.error || 'Failed to process PDF');
         return;
       }
@@ -194,11 +257,54 @@ function StudyPlatformContent() {
         setSelectedChapterId('ALL');
         loadModeContent(data.document.id, 'ALL', activeMode);
       }
-    } catch (err) {
-      alert('Error uploading PDF file');
+    } catch (err: any) {
+      alert(err?.message || 'Error uploading PDF file');
     } finally {
       setIsUploading(false);
+      setUploadPercent(0);
       setUploadStatus('');
+    }
+  };
+
+  // Delete PDF Handler
+  const handleDeletePDF = async (docId: string) => {
+    if (!docId) return;
+    setIsDeleting(true);
+    setDeleteStatus('Removing PDF from Private Vercel Blob storage...');
+    sound.playPop();
+
+    try {
+      const res = await fetch(`/api/study/documents/${docId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert(data.error || 'Failed to delete PDF document');
+        setIsDeleting(false);
+        return;
+      }
+
+      setDeleteStatus('Cleaning up chapters, flashcards, quizzes & storage quota...');
+      await fetchDocuments();
+
+      if (activeDoc?.id === docId) {
+        const remaining = documents.filter(d => d.id !== docId);
+        if (remaining.length > 0) {
+          setActiveDoc(remaining[0]);
+          fetchDocumentDetails(remaining[0].id);
+        } else {
+          setActiveDoc(null);
+        }
+      }
+
+      sound.playLevelUp();
+      setDocToDelete(null);
+    } catch (err) {
+      alert('Failed to delete document.');
+    } finally {
+      setIsDeleting(false);
+      setDeleteStatus('');
     }
   };
 
@@ -259,13 +365,12 @@ function StudyPlatformContent() {
   // Select Chapter
   const handleSelectChapter = (chapterId: string) => {
     setSelectedChapterId(chapterId);
-    setMobileDrawerOpen(false);
     if (activeDoc) {
       loadModeContent(activeDoc.id, chapterId, activeMode);
     }
   };
 
-  // Change Mode Tab
+  // Select Mode
   const handleChangeMode = (mode: ModeType) => {
     setActiveMode(mode);
     if (activeDoc) {
@@ -273,59 +378,56 @@ function StudyPlatformContent() {
     }
   };
 
-  // Flashcard Mastery Toggle
+  // Toggle Flashcard Mastery
   const handleToggleCardMastery = async (cardId: string, currentMastered: boolean) => {
     sound.playPop();
-    const nextMastered = !currentMastered;
-    setFlashcards(prev => prev.map(c => c.id === cardId ? { ...c, mastered: nextMastered } : c));
+    const newStatus = !currentMastered;
+    setFlashcards(prev => prev.map(c => c.id === cardId ? { ...c, mastered: newStatus } : c));
 
     try {
       await fetch('/api/study/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          documentId: activeDoc?.id,
-          chapterId: selectedChapterId === 'ALL' ? null : selectedChapterId,
-          type: 'FLASHCARD_MASTERY',
+          action: 'master_card',
           cardId,
-          mastered: nextMastered,
+          mastered: newStatus,
         })
       });
     } catch (err) {
-      console.error('Mastery update error:', err);
+      console.error('Error toggling card mastery:', err);
     }
   };
 
-  // Quiz Option Click
-  const handleAnswerQuiz = async (optionIdx: number) => {
-    if (quizSubmitted) return;
-
+  // Submit Quiz Question Answer
+  const handleAnswerQuizQuestion = async (optionIdx: number) => {
+    if (quizSubmitted || !quizQuestions[currentQuizIdx]) return;
     setSelectedQuizOption(optionIdx);
     setQuizSubmitted(true);
-    sound.playPop();
 
     const currentQ = quizQuestions[currentQuizIdx];
-    const isCorrect = optionIdx === currentQ.correctAnswer;
+    const isRight = optionIdx === currentQ.correctAnswer;
 
-    if (isCorrect) sound.playLevelUp();
+    if (isRight) {
+      sound.playLevelUp();
+      setQuizScore(prev => ({ ...prev, correct: prev.correct + 1 }));
+    } else {
+      sound.playPop();
+    }
 
-    setQuizScore(prev => ({
-      correct: prev.correct + (isCorrect ? 1 : 0),
-      total: prev.total + 1
-    }));
+    setQuizQuestions(prev => prev.map((q, idx) => 
+      idx === currentQuizIdx ? { ...q, userAnswer: optionIdx, isCorrect: isRight } : q
+    ));
 
     try {
       await fetch('/api/study/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          documentId: activeDoc?.id,
-          chapterId: selectedChapterId === 'ALL' ? null : selectedChapterId,
-          type: 'QUIZ_SUBMISSION',
+          action: 'submit_quiz_answer',
           questionId: currentQ.id,
           userAnswer: optionIdx,
-          score: quizScore.correct + (isCorrect ? 1 : 0),
-          total: quizScore.total + 1,
+          isCorrect: isRight,
         })
       });
     } catch (err) {
@@ -377,54 +479,61 @@ function StudyPlatformContent() {
     }
   };
 
+  const formatMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+
   const selectedChapterName = selectedChapterId === 'ALL' 
     ? 'ALL CHAPTERS (FULL PDF)'
     : activeDoc?.chapters.find(c => c.id === selectedChapterId)?.title || 'Chapter';
 
+  const filteredDocs = documents.filter(d => 
+    d.title.toLowerCase().includes(librarySearch.toLowerCase()) || 
+    d.fileName.toLowerCase().includes(librarySearch.toLowerCase())
+  );
+
   return (
-    <div className="min-h-screen p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="min-h-screen p-4 md:p-8 space-y-6 max-w-7xl mx-auto select-none">
 
       {/* Top Header & Document Controls */}
       <div className="bg-[#FFD83D] comic-border-lg shadow-comic-lg p-6 relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="comic-badge comic-badge-red text-xs">AI PDF LEARNING PLATFORM</span>
-            <span className="font-mono text-xs font-bold bg-black text-white px-2 py-0.5 rounded">PDF PARSER & CHUNK ENGINE</span>
+            <span className="font-mono text-xs font-bold bg-black text-white px-2 py-0.5 rounded">PRIVATE VERCEL BLOB</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight mt-1">
             {activeDoc ? activeDoc.title : 'STUDY HUB'}
           </h1>
           <p className="text-xs sm:text-sm font-bold text-gray-800 font-mono mt-1">
             {activeDoc 
-              ? `📄 ${activeDoc.fileName} • ${activeDoc.chapters.length} Chapters Detected • ${activeDoc.pageCount} Pages`
+              ? `📄 ${activeDoc.fileName} • ${activeDoc.chapters.length} Chapters Detected • ${activeDoc.pageCount} Pages • ${(activeDoc.fileSize / (1024 * 1024)).toFixed(1)} MB`
               : 'Upload any PDF textbook, paper, or notes to generate structured summaries, explanations, flashcards, quizzes & key points.'}
           </p>
         </div>
 
-        {/* Upload Dropzone / Doc Switcher */}
-        <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
-          {documents.length > 0 && (
-            <select
-              value={activeDoc?.id || ''}
-              onChange={(e) => {
-                const doc = documents.find(d => d.id === e.target.value);
-                if (doc) {
-                  setActiveDoc(doc);
-                  setSelectedChapterId('ALL');
-                  fetchDocumentDetails(doc.id);
-                }
-              }}
-              className="bg-white comic-border-sm px-3 py-2 text-xs font-black uppercase rounded shadow-comic-sm focus:outline-none"
-            >
-              {documents.map(d => (
-                <option key={d.id} value={d.id}>📄 {d.title}</option>
-              ))}
-            </select>
+        {/* Upload Dropzone / Storage Indicator / Library Toggle */}
+        <div className="flex items-center gap-2 shrink-0 w-full md:w-auto flex-wrap">
+          
+          <button
+            onClick={() => setLibraryOpen(true)}
+            className="bg-white hover:bg-yellow-100 comic-border-sm px-3 py-2 text-xs font-black uppercase rounded shadow-comic-sm flex items-center gap-1.5"
+            title="Open Document Library & Manage Storage"
+          >
+            <FolderOpen className="w-4 h-4 text-black" />
+            <span>LIBRARY ({documents.length})</span>
+          </button>
+
+          {/* Storage Quota Pill */}
+          {storageInfo && (
+            <div className="bg-black text-[#FFD83D] comic-border-sm px-3 py-1.5 text-xs font-mono font-bold flex items-center gap-1.5">
+              <HardDrive className="w-3.5 h-3.5 text-[#FF5A5F]" />
+              <span>{formatMb(storageInfo.usedBytes)}MB / {storageInfo.maxMb}MB</span>
+            </div>
           )}
 
+          {/* Upload Button */}
           <label className="bg-black hover:bg-[#FF5A5F] text-[#FFD83D] hover:text-white comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-comic-sm transition-all shrink-0">
             <Upload className="w-4 h-4" />
-            <span>{isUploading ? uploadStatus : 'UPLOAD PDF'}</span>
+            <span>{isUploading ? `${uploadPercent}%` : 'UPLOAD PDF'}</span>
             <input 
               type="file" 
               accept=".pdf,application/pdf" 
@@ -436,520 +545,675 @@ function StudyPlatformContent() {
         </div>
       </div>
 
-      {/* Main Study Workspace (2 Columns) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        {/* LEFT CHAPTER NAVIGATION PANEL (Desktop + Mobile Drawer) */}
-        <div className="lg:col-span-4 space-y-4">
-
-          {/* Mobile Drawer Toggle */}
-          <div className="lg:hidden flex items-center justify-between bg-white comic-border-md p-3">
-            <span className="font-black text-xs uppercase flex items-center gap-2">
-              <Layers className="w-4 h-4 text-black" />
-              <span>SELECTED: {selectedChapterName}</span>
+      {/* REAL UPLOADING & PROCESSING PROGRESS BAR */}
+      {isUploading && (
+        <div className="bg-white comic-border-lg p-4 space-y-2 shadow-comic-md">
+          <div className="flex items-center justify-between text-xs font-mono font-black">
+            <span className="flex items-center gap-2">
+              <RotateCw className="w-4 h-4 animate-spin text-[#FF5A5F]" />
+              <span>{uploadStatus}</span>
             </span>
-            <button 
-              onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
-              className="bg-[#FFD83D] comic-border-sm p-1.5 font-black text-xs"
-            >
-              {mobileDrawerOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-            </button>
+            <span>{uploadPercent}%</span>
           </div>
+          <div className="w-full bg-gray-200 h-3 comic-border-sm overflow-hidden">
+            <div 
+              className="bg-[#FF5A5F] h-full transition-all duration-200" 
+              style={{ width: `${uploadPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
-          <div className={`bg-white comic-border-lg shadow-comic-lg p-4 space-y-3 ${mobileDrawerOpen ? 'block' : 'hidden lg:block'}`}>
-            <div className="flex items-center justify-between pb-2 border-b-2 border-black">
-              <h3 className="font-black text-sm uppercase flex items-center gap-1.5">
-                <BookOpen className="w-4 h-4" />
-                <span>CHAPTER NAVIGATION</span>
-              </h3>
-              <span className="text-[10px] font-mono font-bold bg-[#FFD83D] px-2 py-0.5 border border-black rounded">
-                {activeDoc?.chapters.length || 0} SECTIONS
+      {/* EMPTY STUDY LIBRARY STATE */}
+      {documents.length === 0 && !isUploading ? (
+        <div className="bg-white comic-border-lg shadow-comic-lg p-12 text-center space-y-5">
+          <div className="w-20 h-20 bg-[#FFD83D] comic-border-md rounded-full mx-auto flex items-center justify-center font-black text-3xl">
+            📚
+          </div>
+          <h2 className="font-black text-3xl uppercase">YOUR STUDY LIBRARY IS EMPTY</h2>
+          <p className="font-mono text-sm text-gray-700 max-w-md mx-auto font-bold">
+            Upload a textbook, notes, research paper, or study material to begin.
+          </p>
+          <label className="btn-comic btn-comic-yellow text-sm px-6 py-3 inline-flex items-center gap-2 font-black uppercase cursor-pointer">
+            <Upload className="w-5 h-5" />
+            <span>UPLOAD YOUR FIRST PDF</span>
+            <input 
+              type="file" 
+              accept=".pdf,application/pdf" 
+              onChange={handleFileUpload} 
+              className="hidden" 
+            />
+          </label>
+        </div>
+      ) : (
+        /* MAIN STUDY WORKSPACE (2 Columns) */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+          {/* LEFT CHAPTER NAVIGATION PANEL */}
+          <div className="lg:col-span-4 space-y-4">
+
+            {/* Mobile Drawer Toggle */}
+            <div className="lg:hidden flex items-center justify-between bg-white comic-border-md p-3">
+              <span className="font-black text-xs uppercase flex items-center gap-2">
+                <Layers className="w-4 h-4 text-black" />
+                <span>SELECTED: {selectedChapterName}</span>
               </span>
+              <button 
+                onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+                className="bg-black text-white p-1 rounded font-black text-xs uppercase"
+              >
+                {mobileDrawerOpen ? 'CLOSE' : 'CHAPTERS'}
+              </button>
             </div>
 
-            {/* ALL CHAPTERS BUTTON */}
-            <button
-              onClick={() => handleSelectChapter('ALL')}
-              className={`w-full text-left p-3 border-2 font-black text-xs uppercase transition-all flex items-center justify-between ${
-                selectedChapterId === 'ALL'
-                  ? 'bg-[#FF5A5F] text-white border-black shadow-comic-sm translate-x-1'
-                  : 'bg-[#FFFDF5] hover:bg-[#FFD83D] border-black text-black'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span>⚡</span>
-                <span>ALL CHAPTERS (FULL PDF)</span>
+            {/* CHAPTER LIST CARD */}
+            <div className={`bg-white comic-border-lg shadow-comic-lg p-4 space-y-3 ${mobileDrawerOpen ? 'block' : 'hidden lg:block'}`}>
+              <div className="flex items-center justify-between pb-2 border-b-2 border-black">
+                <span className="font-black text-xs uppercase flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-[#FF5A5F]" />
+                  <span>CHAPTERS ({activeDoc?.chapters.length || 0})</span>
+                </span>
+                <span className="comic-sticker comic-sticker-yellow text-[10px]">
+                  SELECT SCOPE
+                </span>
               </div>
-              <span className="text-[10px] font-mono bg-black text-white px-1.5 py-0.5 rounded">FULL</span>
-            </button>
 
-            {/* CHAPTER LIST */}
-            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
-              {activeDoc?.chapters.map((ch) => {
-                const isSelected = selectedChapterId === ch.id;
+              <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-1">
+                {/* ALL CHAPTERS OPTION */}
+                <button
+                  onClick={() => handleSelectChapter('ALL')}
+                  className={`w-full text-left p-2.5 comic-border-sm font-bold text-xs flex items-center justify-between transition-all ${
+                    selectedChapterId === 'ALL'
+                      ? 'bg-[#FFD83D] text-black font-black shadow-comic-sm'
+                      : 'bg-white hover:bg-yellow-50 text-gray-900'
+                  }`}
+                >
+                  <span className="truncate">📖 ALL CHAPTERS (FULL PDF)</span>
+                  <span className="text-[10px] bg-black text-white px-1.5 py-0.5 rounded font-mono">
+                    {activeDoc?.pageCount || 1} PG
+                  </span>
+                </button>
+
+                {/* CHAPTER ITEMS */}
+                {activeDoc?.chapters.map((ch) => {
+                  const isSelected = selectedChapterId === ch.id;
+                  return (
+                    <button
+                      key={ch.id}
+                      onClick={() => handleSelectChapter(ch.id)}
+                      className={`w-full text-left p-2.5 comic-border-sm font-bold text-xs flex items-center justify-between transition-all ${
+                        isSelected
+                          ? 'bg-[#FF5A5F] text-white font-black shadow-comic-sm'
+                          : 'bg-white hover:bg-red-50 text-gray-900'
+                      }`}
+                    >
+                      <span className="truncate font-mono">
+                        {ch.chapterNumber}. {ch.title}
+                      </span>
+                      <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-gray-400'}`} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* AI TUTOR QUICK QUESTION BOX */}
+            <div className="bg-[#B9A7FF] comic-border-lg shadow-comic-lg p-4 space-y-3">
+              <h4 className="font-black text-xs uppercase flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-black" />
+                <span>AI TUTOR</span>
+              </h4>
+              <form onSubmit={handleAskTutor} className="space-y-2">
+                <input
+                  type="text"
+                  value={tutorQuery}
+                  onChange={(e) => setTutorQuery(e.target.value)}
+                  placeholder={`Ask about ${selectedChapterName}...`}
+                  className="w-full bg-white comic-border-sm p-2 text-xs font-mono font-bold focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={loadingTutor}
+                  className="w-full bg-black text-white hover:bg-gray-800 comic-border-sm p-1.5 font-black text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  {loadingTutor ? 'AI THINKING...' : 'ASK TUTOR'}
+                </button>
+              </form>
+
+              {tutorAnswer && (
+                <div className="bg-white comic-border-sm p-3 font-mono text-xs text-gray-900 max-h-48 overflow-y-auto space-y-1">
+                  <div className="font-black text-[10px] text-purple-700 uppercase">⚡ TUTOR RESPONSE:</div>
+                  <p className="whitespace-pre-line leading-relaxed">{tutorAnswer}</p>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* RIGHT MAIN STUDY WORKSPACE */}
+          <div className="lg:col-span-8 space-y-4">
+
+            {/* 5 MODE SELECTION TABS */}
+            <div className="grid grid-cols-5 gap-1 sm:gap-2">
+              {(['SUMMARIZE', 'EXPLAIN', 'FLASHCARDS', 'QUIZ', 'KEY_POINTS'] as ModeType[]).map((mode) => {
+                const isActive = activeMode === mode;
+                const labels: Record<ModeType, string> = {
+                  SUMMARIZE: 'SUMMARY',
+                  EXPLAIN: 'EXPLAIN',
+                  FLASHCARDS: 'CARDS',
+                  QUIZ: 'QUIZ',
+                  KEY_POINTS: 'KEY POINTS',
+                };
+
                 return (
                   <button
-                    key={ch.id}
-                    onClick={() => handleSelectChapter(ch.id)}
-                    className={`w-full text-left p-2.5 border-2 transition-all flex flex-col gap-1 ${
-                      isSelected
-                        ? 'bg-[#FFD83D] border-black shadow-comic-sm font-black translate-x-1'
-                        : 'bg-white hover:bg-yellow-50 border-gray-300 text-black'
+                    key={mode}
+                    onClick={() => handleChangeMode(mode)}
+                    className={`py-2.5 px-1 sm:px-3 border-2 font-black text-[10px] sm:text-xs uppercase tracking-tight transition-all text-center rounded-t-lg cursor-pointer ${
+                      isActive
+                        ? 'bg-[#FFD83D] border-black shadow-comic-sm font-black translate-y-[-2px]'
+                        : 'bg-white hover:bg-yellow-100 border-gray-400 text-black'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs uppercase line-clamp-1">
-                        {ch.title}
-                      </span>
-                      {isSelected && <ChevronRight className="w-4 h-4 shrink-0" />}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-gray-600">
-                      <span className={ch.summaryJson ? 'text-green-600 font-extrabold' : ''}>
-                        {ch.summaryJson ? '✓ Summary' : '○ Summary'}
-                      </span>
-                      <span>•</span>
-                      <span className={ch.explanationText ? 'text-green-600 font-extrabold' : ''}>
-                        {ch.explanationText ? '✓ Explain' : '○ Explain'}
-                      </span>
-                      <span>•</span>
-                      <span className={ch.keyPointsJson ? 'text-green-600 font-extrabold' : ''}>
-                        {ch.keyPointsJson ? '✓ Key Points' : '○ Key Points'}
-                      </span>
-                    </div>
+                    {labels[mode]}
                   </button>
                 );
               })}
             </div>
-          </div>
 
-          {/* AI TUTOR QUICK QUESTION BOX */}
-          <div className="bg-[#B9A7FF] comic-border-lg shadow-comic-lg p-4 space-y-3">
-            <h4 className="font-black text-xs uppercase flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-black" />
-              <span>DEION AI TUTOR</span>
-            </h4>
-            <form onSubmit={handleAskTutor} className="space-y-2">
-              <input
-                type="text"
-                value={tutorQuery}
-                onChange={(e) => setTutorQuery(e.target.value)}
-                placeholder={`Ask about ${selectedChapterName}...`}
-                className="w-full bg-white comic-border-sm p-2 text-xs font-mono font-bold focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={loadingTutor}
-                className="w-full bg-black text-white hover:bg-gray-800 comic-border-sm p-1.5 font-black text-xs uppercase tracking-wider transition-colors"
-              >
-                {loadingTutor ? 'AI THINKING...' : 'ASK TUTOR'}
-              </button>
-            </form>
+            {/* MAIN VIEWPORT CONTAINER */}
+            <div className="bg-white comic-border-lg shadow-comic-lg p-6 min-h-[500px] relative">
 
-            {tutorAnswer && (
-              <div className="bg-white comic-border-sm p-3 font-mono text-xs text-gray-900 max-h-48 overflow-y-auto space-y-1">
-                <div className="font-black text-[10px] text-purple-700 uppercase">⚡ TUTOR RESPONSE:</div>
-                <p className="whitespace-pre-line leading-relaxed">{tutorAnswer}</p>
-              </div>
-            )}
-          </div>
-
-        </div>
-
-        {/* RIGHT MAIN STUDY WORKSPACE */}
-        <div className="lg:col-span-8 space-y-4">
-
-          {/* 5 MODE SELECTION TABS */}
-          <div className="grid grid-cols-5 gap-1 sm:gap-2">
-            {(['SUMMARIZE', 'EXPLAIN', 'FLASHCARDS', 'QUIZ', 'KEY_POINTS'] as ModeType[]).map((mode) => {
-              const isActive = activeMode === mode;
-              const labels: Record<ModeType, string> = {
-                SUMMARIZE: 'SUMMARY',
-                EXPLAIN: 'EXPLAIN',
-                FLASHCARDS: 'CARDS',
-                QUIZ: 'QUIZ',
-                KEY_POINTS: 'KEY POINTS',
-              };
-
-              return (
-                <button
-                  key={mode}
-                  onClick={() => handleChangeMode(mode)}
-                  className={`py-2.5 px-1 sm:px-3 border-2 font-black text-[10px] sm:text-xs uppercase tracking-tight transition-all text-center rounded-t-lg ${
-                    isActive
-                      ? 'bg-[#FFD83D] border-black shadow-comic-sm font-black translate-y-[-2px]'
-                      : 'bg-white hover:bg-yellow-100 border-gray-400 text-black'
-                  }`}
-                >
-                  {labels[mode]}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* MAIN VIEWPORT CONTAINER */}
-          <div className="bg-white comic-border-lg shadow-comic-lg p-6 min-h-[500px] relative">
-
-            {/* Loading Overlay */}
-            {isLoadingMode && (
-              <div className="absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center p-6 text-center space-y-3">
-                <div className="w-10 h-10 border-4 border-black border-t-[#FF5A5F] rounded-full animate-spin" />
-                <div className="comic-badge comic-badge-yellow font-black text-xs animate-bounce">
-                  PROCESSING {activeMode} FOR {selectedChapterName}...
-                </div>
-                <p className="font-mono text-xs text-gray-700">
-                  Synthesizing PDF content through Ollama → Gemini → Groq fallback pipeline...
-                </p>
-              </div>
-            )}
-
-            {/* MODE 1: SUMMARIZE */}
-            {activeMode === 'SUMMARIZE' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
-                  <div>
-                    <h2 className="font-black text-xl uppercase">STUDY SUMMARY</h2>
-                    <span className="font-mono text-xs font-bold text-gray-700">
-                      Scope: {selectedChapterName}
-                    </span>
+              {/* Loading Overlay */}
+              {isLoadingMode && (
+                <div className="absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                  <div className="w-10 h-10 border-4 border-black border-t-[#FF5A5F] rounded-full animate-spin" />
+                  <div className="comic-badge comic-badge-yellow font-black text-xs animate-bounce">
+                    PROCESSING {activeMode} FOR {selectedChapterName}...
                   </div>
-                  <div className="flex items-center gap-2">
+                  <p className="font-mono text-xs text-gray-700">
+                    Synthesizing content through Ollama → Gemini → Groq fallback pipeline...
+                  </p>
+                </div>
+              )}
+
+              {/* MODE 1: SUMMARIZE */}
+              {activeMode === 'SUMMARIZE' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                    <div>
+                      <h2 className="font-black text-xl uppercase">STUDY SUMMARY</h2>
+                      <span className="font-mono text-xs font-bold text-gray-700">
+                        Scope: {selectedChapterName}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'SUMMARIZE', true)}
+                        className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm cursor-pointer"
+                        title="Generate new fresh summary with AI"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                        <span>REGENERATE NEW</span>
+                      </button>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(summaryText)}
+                        className="bg-gray-100 hover:bg-gray-200 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 cursor-pointer"
+                        title="Copy Summary"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">COPY</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="prose max-w-none font-sans text-sm text-gray-900 leading-relaxed whitespace-pre-line space-y-3">
+                    {summaryText || 'Click generate to load chapter summary.'}
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 2: EXPLAIN */}
+              {activeMode === 'EXPLAIN' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                    <div>
+                      <h2 className="font-black text-xl uppercase">TEACHER-STYLE BREAKDOWN</h2>
+                      <span className="font-mono text-xs font-bold text-gray-700">
+                        Simplified concepts & step-by-step explanations for {selectedChapterName}
+                      </span>
+                    </div>
                     <button
-                      onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'SUMMARIZE', true)}
-                      className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm"
-                      title="Generate new fresh summary with AI"
+                      onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'EXPLAIN', true)}
+                      className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2 cursor-pointer"
+                      title="Generate new fresh explanation with AI"
                     >
                       <RotateCw className="w-3.5 h-3.5" />
                       <span>REGENERATE NEW</span>
                     </button>
+                  </div>
+
+                  <div className="bg-[#FFFDF5] comic-border-sm p-4 font-sans text-sm text-gray-900 leading-relaxed whitespace-pre-line space-y-4">
+                    {explanationText || 'Click generate to load teacher explanation.'}
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 3: FLASHCARDS */}
+              {activeMode === 'FLASHCARDS' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                    <div>
+                      <h2 className="font-black text-xl uppercase">STUDY FLASHCARDS</h2>
+                      <span className="font-mono text-xs font-bold text-gray-700">
+                        {flashcards.length} Cards Generated • {flashcards.filter(c => c.mastered).length} Mastered
+                      </span>
+                    </div>
                     <button
-                      onClick={() => navigator.clipboard.writeText(summaryText)}
-                      className="bg-gray-100 hover:bg-gray-200 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1"
-                      title="Copy Summary"
+                      onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'FLASHCARDS', true)}
+                      className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2 cursor-pointer"
+                      title="Generate new fresh flashcards with AI"
                     >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">COPY</span>
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>REGENERATE NEW</span>
                     </button>
                   </div>
-                </div>
 
-                <div className="prose max-w-none font-sans text-sm text-gray-900 leading-relaxed whitespace-pre-line space-y-3">
-                  {summaryText || 'Click generate to load chapter summary.'}
-                </div>
-              </div>
-            )}
-
-            {/* MODE 2: EXPLAIN */}
-            {activeMode === 'EXPLAIN' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
-                  <div>
-                    <h2 className="font-black text-xl uppercase">TEACHER-STYLE BREAKDOWN</h2>
-                    <span className="font-mono text-xs font-bold text-gray-700">
-                      Simplified concepts & step-by-step explanations for {selectedChapterName}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'EXPLAIN', true)}
-                    className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2"
-                    title="Generate new fresh explanation with AI"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    <span>REGENERATE NEW</span>
-                  </button>
-                </div>
-
-                <div className="bg-[#FFFDF5] comic-border-sm p-4 font-sans text-sm text-gray-900 leading-relaxed whitespace-pre-line space-y-4">
-                  {explanationText || 'Click generate to load teacher explanation.'}
-                </div>
-              </div>
-            )}
-
-            {/* MODE 3: FLASHCARDS */}
-            {activeMode === 'FLASHCARDS' && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
-                  <div>
-                    <h2 className="font-black text-xl uppercase">STUDY FLASHCARDS</h2>
-                    <span className="font-mono text-xs font-bold text-gray-700">
-                      {flashcards.length} Cards Generated • {flashcards.filter(c => c.mastered).length} Mastered
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'FLASHCARDS', true)}
-                    className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2"
-                    title="Generate new fresh flashcards with AI"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    <span>REGENERATE NEW</span>
-                  </button>
-                </div>
-
-                {flashcards.length > 0 ? (
-                  <div className="max-w-md mx-auto space-y-4">
-                    {/* 3D FLIP CARD */}
-                    <div 
-                      onClick={() => setIsCardFlipped(!isCardFlipped)}
-                      className={`min-h-[220px] p-6 comic-border-lg cursor-pointer transition-all transform flex flex-col justify-between select-none ${
-                        isCardFlipped 
-                          ? 'bg-[#B9A7FF] text-black shadow-comic-lg' 
-                          : 'bg-[#FFD83D] text-black shadow-comic-lg'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between text-xs font-mono font-bold">
-                        <span className="bg-black text-white px-2 py-0.5 rounded uppercase">
-                          CARD {currentCardIdx + 1} OF {flashcards.length}
-                        </span>
-                        <span className="bg-white text-black px-2 py-0.5 comic-border-sm uppercase">
-                          {isCardFlipped ? 'BACK (ANSWER)' : 'FRONT (QUESTION)'}
-                        </span>
-                      </div>
-
-                      <div className="my-auto text-center py-4">
-                        <h3 className="font-black text-lg sm:text-xl uppercase leading-snug">
-                          {isCardFlipped ? flashcards[currentCardIdx].answer : flashcards[currentCardIdx].question}
-                        </h3>
-                        <p className="text-[10px] font-mono font-bold text-gray-700 mt-2">
-                          (TAP CARD TO FLIP)
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="bg-white text-black px-2 py-0.5 rounded border border-black uppercase text-[10px]">
-                          TYPE: {flashcards[currentCardIdx].cardType}
-                        </span>
-                        {flashcards[currentCardIdx].mastered && (
-                          <span className="bg-green-500 text-white px-2 py-0.5 rounded text-[10px] font-black">
-                            ✓ MASTERED
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* CARD NAVIGATION & MASTERY CONTROLS */}
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => {
-                          if (currentCardIdx > 0) {
-                            setCurrentCardIdx(prev => prev - 1);
-                            setIsCardFlipped(false);
-                            sound.playPop();
-                          }
-                        }}
-                        disabled={currentCardIdx === 0}
-                        className="bg-white hover:bg-gray-100 disabled:opacity-40 comic-border-sm px-3 py-2 text-xs font-black uppercase"
-                      >
-                        PREV
-                      </button>
-
-                      <button
-                        onClick={() => handleToggleCardMastery(
-                          flashcards[currentCardIdx].id, 
-                          flashcards[currentCardIdx].mastered
-                        )}
-                        className={`comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
-                          flashcards[currentCardIdx].mastered
-                            ? 'bg-green-500 text-white'
-                            : 'bg-[#FF5A5F] text-white hover:bg-red-600'
-                        }`}
-                      >
-                        {flashcards[currentCardIdx].mastered ? '✓ MASTERED' : 'MARK MASTERED'}
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          if (currentCardIdx < flashcards.length - 1) {
-                            setCurrentCardIdx(prev => prev + 1);
-                            setIsCardFlipped(false);
-                            sound.playPop();
-                          }
-                        }}
-                        disabled={currentCardIdx === flashcards.length - 1}
-                        className="bg-white hover:bg-gray-100 disabled:opacity-40 comic-border-sm px-3 py-2 text-xs font-black uppercase"
-                      >
-                        NEXT
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="font-mono text-xs text-gray-700">No flashcards available yet.</p>
-                )}
-              </div>
-            )}
-
-            {/* MODE 4: QUIZ */}
-            {activeMode === 'QUIZ' && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
-                  <div>
-                    <h2 className="font-black text-xl uppercase">INTERACTIVE CHAPTER QUIZ</h2>
-                    <span className="font-mono text-xs font-bold text-gray-700">
-                      Score: {quizScore.correct} / {quizQuestions.length} Correct
-                    </span>
-                  </div>
-                </div>
-
-                {!quizComplete && quizQuestions.length > 0 ? (
-                  <div className="space-y-5 max-w-2xl mx-auto">
-                    {/* QUESTION TITLE */}
-                    <div className="bg-[#FFFDF5] comic-border-md p-4 space-y-2">
-                      <div className="flex items-center justify-between text-xs font-mono font-bold">
-                        <span className="bg-black text-[#FFD83D] px-2 py-0.5 rounded uppercase">
-                          QUESTION {currentQuizIdx + 1} OF {quizQuestions.length}
-                        </span>
-                        <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2 py-0.5 rounded font-black">
-                          {quizQuestions[currentQuizIdx].topic}
-                        </span>
-                      </div>
-                      <h3 className="font-black text-base sm:text-lg uppercase text-black">
-                        {quizQuestions[currentQuizIdx].question}
-                      </h3>
-                    </div>
-
-                    {/* OPTIONS (A, B, C, D) */}
-                    <div className="grid grid-cols-1 gap-2.5">
-                      {quizQuestions[currentQuizIdx].options.map((opt, oIdx) => {
-                        const isSelected = selectedQuizOption === oIdx;
-                        const isCorrectOption = oIdx === quizQuestions[currentQuizIdx].correctAnswer;
-
-                        let btnStyle = 'bg-white hover:bg-yellow-50 border-black text-black';
-                        if (quizSubmitted) {
-                          if (isCorrectOption) {
-                            btnStyle = 'bg-green-500 text-white border-black font-black shadow-comic-sm';
-                          } else if (isSelected && !isCorrectOption) {
-                            btnStyle = 'bg-red-500 text-white border-black font-black shadow-comic-sm';
-                          } else {
-                            btnStyle = 'bg-gray-100 border-gray-300 text-gray-400 opacity-60';
-                          }
-                        }
-
-                        return (
-                          <button
-                            key={oIdx}
-                            onClick={() => handleAnswerQuiz(oIdx)}
-                            disabled={quizSubmitted}
-                            className={`w-full text-left p-3.5 border-2 text-xs font-bold transition-all flex items-center justify-between ${btnStyle}`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <span className="w-6 h-6 rounded-full border border-black bg-black text-white flex items-center justify-center text-[10px] font-black shrink-0">
-                                {String.fromCharCode(65 + oIdx)}
-                              </span>
-                              <span>{opt}</span>
-                            </div>
-
-                            {quizSubmitted && isCorrectOption && <CheckCircle2 className="w-5 h-5 text-white shrink-0" />}
-                            {quizSubmitted && isSelected && !isCorrectOption && <XCircle className="w-5 h-5 text-white shrink-0" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* EXPLANATION FEEDBACK BOX */}
-                    {quizSubmitted && (
-                      <div className="bg-[#FFD83D] comic-border-md p-4 space-y-2">
-                        <div className="font-black text-xs uppercase flex items-center gap-1.5">
-                          <Lightbulb className="w-4 h-4 text-black" />
-                          <span>EXPLANATION:</span>
-                        </div>
-                        <p className="font-sans text-xs text-gray-900 leading-relaxed font-bold">
-                          {quizQuestions[currentQuizIdx].explanation}
-                        </p>
-                        <div className="pt-2 flex justify-end">
-                          <button
-                            onClick={handleNextQuizQuestion}
-                            className="bg-black hover:bg-gray-800 text-white comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1"
-                          >
-                            <span>{currentQuizIdx < quizQuestions.length - 1 ? 'NEXT QUESTION' : 'VIEW RESULTS'}</span>
-                            <ArrowRight className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : quizComplete ? (
-                  /* CHAPTER QUIZ COMPLETE SUMMARY CARD */
-                  <div className="bg-[#B9A7FF] comic-border-lg shadow-comic-lg p-8 text-center space-y-4 max-w-md mx-auto">
-                    <div className="comic-badge comic-badge-yellow text-xs font-black animate-bounce mx-auto">
-                      CHAPTER QUIZ COMPLETE!
-                    </div>
-                    <h2 className="font-black text-3xl uppercase">ACCURACY: {Math.round((quizScore.correct / Math.max(1, quizQuestions.length)) * 100)}%</h2>
-                    <p className="font-mono text-xs font-bold text-gray-800">
-                      Answered {quizScore.correct} of {quizQuestions.length} questions correctly.
-                    </p>
-                    <div className="pt-4 flex items-center justify-center gap-3">
-                      <button
-                        onClick={() => {
-                          setCurrentQuizIdx(0);
-                          setSelectedQuizOption(null);
-                          setQuizSubmitted(false);
-                          setQuizComplete(false);
-                        }}
-                        className="bg-black text-white comic-border-sm px-4 py-2 text-xs font-black uppercase"
-                      >
-                        RETAKE QUIZ
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="font-mono text-xs text-gray-700">No quiz questions generated yet.</p>
-                )}
-              </div>
-            )}
-
-            {/* MODE 5: KEY POINTS */}
-            {activeMode === 'KEY_POINTS' && (
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b-2 border-black">
-                  <div>
-                    <h2 className="font-black text-xl uppercase">EXAM REVISION KEY POINTS</h2>
-                    <span className="font-mono text-xs font-bold text-gray-700">
-                      Essential formulas, concepts & definitions
-                    </span>
-                  </div>
-
-                  {/* Filter Tags */}
-                  <div className="flex flex-wrap items-center gap-1">
-                    {['ALL', 'IMPORTANT', 'DEFINITION', 'FORMULA', 'CONCEPT'].map(cat => (
-                      <button
-                        key={cat}
-                        onClick={() => setKeyPointFilter(cat)}
-                        className={`px-2 py-0.5 text-[10px] font-black border transition-all ${
-                          keyPointFilter === cat
-                            ? 'bg-black text-white border-black font-mono'
-                            : 'bg-gray-100 text-gray-800 border-gray-300'
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
-                  {keyPoints
-                    .filter(kp => keyPointFilter === 'ALL' || kp.category === keyPointFilter)
-                    .map((kp, idx) => (
+                  {flashcards.length > 0 ? (
+                    <div className="max-w-md mx-auto space-y-4">
+                      {/* 3D FLIP CARD */}
                       <div 
-                        key={idx}
-                        className="bg-[#FFFDF5] comic-border-sm p-3 flex items-start gap-3 border-2 border-black"
+                        onClick={() => setIsCardFlipped(!isCardFlipped)}
+                        className={`min-h-[220px] p-6 comic-border-lg cursor-pointer transition-all transform flex flex-col justify-between select-none ${
+                          isCardFlipped 
+                            ? 'bg-[#B9A7FF] text-black shadow-comic-lg' 
+                            : 'bg-[#FFD83D] text-black shadow-comic-lg'
+                        }`}
                       >
-                        <span className="bg-[#FFD83D] text-black font-black text-[10px] px-2 py-0.5 border border-black uppercase shrink-0 mt-0.5">
-                          {kp.category}
-                        </span>
+                        <div className="flex items-center justify-between text-xs font-mono font-bold">
+                          <span className="bg-black text-white px-2 py-0.5 rounded uppercase">
+                            CARD {currentCardIdx + 1} OF {flashcards.length}
+                          </span>
+                          <span className="bg-white text-black px-2 py-0.5 comic-border-sm uppercase">
+                            {isCardFlipped ? 'BACK (ANSWER)' : 'FRONT (QUESTION)'}
+                          </span>
+                        </div>
+
+                        <div className="my-auto text-center py-4">
+                          <h3 className="font-black text-lg sm:text-xl uppercase leading-snug">
+                            {isCardFlipped ? flashcards[currentCardIdx].answer : flashcards[currentCardIdx].question}
+                          </h3>
+                          <p className="text-[10px] font-mono font-bold text-gray-700 mt-2">
+                            (TAP CARD TO FLIP)
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="bg-white text-black px-2 py-0.5 rounded border border-black uppercase text-[10px]">
+                            TYPE: {flashcards[currentCardIdx].cardType}
+                          </span>
+                          {flashcards[currentCardIdx].mastered && (
+                            <span className="bg-green-500 text-white px-2 py-0.5 rounded text-[10px] font-black">
+                              ✓ MASTERED
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* CARD NAVIGATION & MASTERY CONTROLS */}
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => {
+                            if (currentCardIdx > 0) {
+                              setCurrentCardIdx(prev => prev - 1);
+                              setIsCardFlipped(false);
+                              sound.playPop();
+                            }
+                          }}
+                          disabled={currentCardIdx === 0}
+                          className="bg-white hover:bg-gray-100 disabled:opacity-40 comic-border-sm px-3 py-2 text-xs font-black uppercase cursor-pointer"
+                        >
+                          PREV
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleCardMastery(
+                            flashcards[currentCardIdx].id, 
+                            flashcards[currentCardIdx].mastered
+                          )}
+                          className={`comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer ${
+                            flashcards[currentCardIdx].mastered
+                              ? 'bg-green-500 text-white'
+                              : 'bg-[#FF5A5F] text-white hover:bg-red-600'
+                          }`}
+                        >
+                          {flashcards[currentCardIdx].mastered ? '✓ MASTERED' : 'MARK MASTERED'}
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            if (currentCardIdx < flashcards.length - 1) {
+                              setCurrentCardIdx(prev => prev + 1);
+                              setIsCardFlipped(false);
+                              sound.playPop();
+                            }
+                          }}
+                          disabled={currentCardIdx === flashcards.length - 1}
+                          className="bg-white hover:bg-gray-100 disabled:opacity-40 comic-border-sm px-3 py-2 text-xs font-black uppercase cursor-pointer"
+                        >
+                          NEXT
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 font-mono text-sm font-bold text-gray-700">
+                      No flashcards generated for this scope yet.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* MODE 4: QUIZ */}
+              {activeMode === 'QUIZ' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                    <div>
+                      <h2 className="font-black text-xl uppercase">INTERACTIVE KNOWLEDGE QUIZ</h2>
+                      <span className="font-mono text-xs font-bold text-gray-700">
+                        Question {currentQuizIdx + 1} of {quizQuestions.length} • Score: {quizScore.correct}/{quizScore.total}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'QUIZ', true)}
+                      className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2 cursor-pointer"
+                      title="Generate new fresh quiz questions with AI"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>REGENERATE NEW</span>
+                    </button>
+                  </div>
+
+                  {quizQuestions.length > 0 ? (
+                    <div className="max-w-xl mx-auto space-y-5">
+                      {quizComplete ? (
+                        <div className="bg-[#FFD83D] comic-border-lg p-6 text-center space-y-4">
+                          <Trophy className="w-12 h-12 text-black mx-auto" />
+                          <h3 className="font-black text-2xl uppercase">QUIZ COMPLETED!</h3>
+                          <p className="font-mono text-sm font-bold">
+                            YOUR SCORE: {quizScore.correct} / {quizScore.total} ({Math.round((quizScore.correct / (quizScore.total || 1)) * 100)}%)
+                          </p>
+                          <button
+                            onClick={() => {
+                              setCurrentQuizIdx(0);
+                              setQuizComplete(false);
+                            }}
+                            className="bg-black text-white hover:bg-gray-800 comic-border-sm px-6 py-2.5 font-black text-xs uppercase cursor-pointer"
+                          >
+                            RESTART QUIZ
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="bg-[#FFFDF5] comic-border-md p-4 space-y-2">
+                            <span className="bg-black text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase">
+                              TOPIC: {quizQuestions[currentQuizIdx].topic}
+                            </span>
+                            <h3 className="font-black text-lg text-gray-900 leading-snug">
+                              {quizQuestions[currentQuizIdx].question}
+                            </h3>
+                          </div>
+
+                          <div className="space-y-2">
+                            {quizQuestions[currentQuizIdx].options.map((opt, optIdx) => {
+                              const isSelected = selectedQuizOption === optIdx;
+                              const isCorrectAnswer = optIdx === quizQuestions[currentQuizIdx].correctAnswer;
+                              let btnStyle = 'bg-white hover:bg-yellow-50 text-black border-gray-400';
+
+                              if (quizSubmitted) {
+                                if (isCorrectAnswer) {
+                                  btnStyle = 'bg-green-500 text-white font-black border-black';
+                                } else if (isSelected && !isCorrectAnswer) {
+                                  btnStyle = 'bg-red-500 text-white font-black border-black';
+                                }
+                              } else if (isSelected) {
+                                btnStyle = 'bg-[#FFD83D] text-black font-black border-black';
+                              }
+
+                              return (
+                                <button
+                                  key={optIdx}
+                                  onClick={() => handleAnswerQuizQuestion(optIdx)}
+                                  disabled={quizSubmitted}
+                                  className={`w-full text-left p-3 comic-border-sm text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${btnStyle}`}
+                                >
+                                  <span>{String.fromCharCode(65 + optIdx)}. {opt}</span>
+                                  {quizSubmitted && isCorrectAnswer && <Check className="w-4 h-4 text-white shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {quizSubmitted && (
+                            <div className="bg-[#B9A7FF] comic-border-sm p-4 space-y-3">
+                              <div className="font-black text-xs uppercase">
+                                {selectedQuizOption === quizQuestions[currentQuizIdx].correctAnswer ? '✓ CORRECT!' : '❌ INCORRECT'}
+                              </div>
+                              <p className="font-mono text-xs text-gray-900">
+                                {quizQuestions[currentQuizIdx].explanation}
+                              </p>
+                              <button
+                                onClick={handleNextQuizQuestion}
+                                className="w-full bg-black text-white hover:bg-gray-800 comic-border-sm p-2 text-xs font-black uppercase cursor-pointer"
+                              >
+                                NEXT QUESTION →
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 font-mono text-sm font-bold text-gray-700">
+                      No quiz questions generated for this scope yet.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* MODE 5: KEY POINTS */}
+              {activeMode === 'KEY_POINTS' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                    <div>
+                      <h2 className="font-black text-xl uppercase">REVISION KEY POINTS</h2>
+                      <span className="font-mono text-xs font-bold text-gray-700">
+                        Essential formulas, definitions & exam highlights
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'KEY_POINTS', true)}
+                      className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2 cursor-pointer"
+                      title="Generate new fresh key points with AI"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>REGENERATE NEW</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {keyPoints.map((kp, idx) => (
+                      <div key={idx} className="bg-[#FFFDF5] comic-border-sm p-3.5 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="bg-black text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded uppercase">
+                            {kp.category}
+                          </span>
+                          {kp.importance === 'high' && (
+                            <span className="bg-[#FF5A5F] text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase">
+                              ★ HIGH IMPORTANCE
+                            </span>
+                          )}
+                        </div>
                         <p className="font-sans text-xs font-bold text-gray-900 leading-relaxed">
                           {kp.point}
                         </p>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* DOCUMENT LIBRARY MODAL */}
+      {libraryOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#FFFDF5] comic-border-lg shadow-comic-lg p-6 max-w-2xl w-full space-y-4 max-h-[85vh] flex flex-col relative border-4 border-black">
+            <div className="flex items-center justify-between border-b-3 border-black pb-3">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-black" />
+                <h3 className="font-black text-xl uppercase">MY STUDY LIBRARY</h3>
+              </div>
+              <button 
+                onClick={() => setLibraryOpen(false)}
+                className="bg-black text-white p-1 rounded font-black text-xs hover:bg-red-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Storage Quota Bar */}
+            {storageInfo && (
+              <div className="bg-[#FFD83D] comic-border-sm p-3 font-mono text-xs space-y-1">
+                <div className="flex items-center justify-between font-black">
+                  <span>STUDY STORAGE USAGE</span>
+                  <span>{formatMb(storageInfo.usedBytes)} MB / {storageInfo.maxMb} MB ({storageInfo.usedPercentage}%)</span>
+                </div>
+                <div className="w-full bg-white h-3 comic-border-sm overflow-hidden">
+                  <div 
+                    className="bg-black h-full transition-all duration-300"
+                    style={{ width: `${storageInfo.usedPercentage}%` }}
+                  />
+                </div>
+                <div className="text-[10px] text-gray-800 font-bold">
+                  {formatMb(storageInfo.availableBytes)} MB available for new PDF study materials.
                 </div>
               </div>
             )}
 
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-gray-500" />
+              <input
+                type="text"
+                value={librarySearch}
+                onChange={(e) => setLibrarySearch(e.target.value)}
+                placeholder="Search PDF files by name..."
+                className="w-full bg-white comic-border-sm pl-9 pr-3 py-2 text-xs font-mono font-bold focus:outline-none"
+              />
+            </div>
+
+            {/* Document List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[200px]">
+              {filteredDocs.length === 0 ? (
+                <div className="text-center py-8 font-mono text-xs text-gray-600 font-bold">
+                  No matching PDFs found in your library.
+                </div>
+              ) : (
+                filteredDocs.map((d) => (
+                  <div key={d.id} className="bg-white comic-border-sm p-3 flex items-center justify-between gap-3 hover:bg-yellow-50">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-xs uppercase truncate text-black">{d.title}</span>
+                        <span className="bg-green-400 text-black text-[9px] font-black px-1.5 py-0.5 rounded border border-black">
+                          {d.processingStatus || 'READY'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-600 font-bold">
+                        📄 {d.fileName} • {d.pageCount} pgs • {d.chapters.length} chapters • {formatMb(d.fileSize)} MB
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => {
+                          setActiveDoc(d);
+                          setSelectedChapterId('ALL');
+                          fetchDocumentDetails(d.id);
+                          setLibraryOpen(false);
+                        }}
+                        className="bg-black text-[#FFD83D] hover:bg-gray-800 comic-border-sm px-3 py-1.5 text-xs font-black uppercase cursor-pointer"
+                      >
+                        STUDY
+                      </button>
+                      <button
+                        onClick={() => setDocToDelete(d)}
+                        className="bg-red-500 hover:bg-red-600 text-white comic-border-sm p-1.5 text-xs font-black uppercase cursor-pointer"
+                        title="Delete PDF & Storage Data"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
           </div>
-
         </div>
+      )}
 
-      </div>
+      {/* DELETE CONFIRMATION MODAL */}
+      {docToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#FFFDF5] comic-border-lg shadow-comic-lg p-6 max-w-md w-full space-y-4 border-4 border-black relative">
+            
+            <div className="bg-[#FF5A5F] text-white comic-border-sm p-3 font-black text-sm uppercase flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <span>DELETE PERMANENTLY?</span>
+            </div>
+
+            <div className="space-y-2 text-xs font-mono text-gray-900 font-bold">
+              <p>
+                Are you sure you want to delete <span className="underline font-black">{docToDelete.fileName}</span>?
+              </p>
+              <p className="text-red-600">
+                This will permanently remove the original PDF from Private Vercel Blob storage and delete all associated chapters, flashcards, quizzes, and progress. This action cannot be undone.
+              </p>
+            </div>
+
+            {isDeleting && (
+              <div className="bg-yellow-100 comic-border-sm p-3 font-mono text-xs text-black font-black flex items-center gap-2">
+                <RotateCw className="w-4 h-4 animate-spin text-[#FF5A5F]" />
+                <span>{deleteStatus}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDocToDelete(null)}
+                className="bg-white hover:bg-gray-100 disabled:opacity-50 comic-border-sm px-4 py-2 text-xs font-black uppercase cursor-pointer"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeletePDF(docToDelete.id)}
+                className="bg-[#FF5A5F] hover:bg-red-600 disabled:opacity-50 text-white comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider cursor-pointer shadow-comic-sm"
+              >
+                {isDeleting ? 'DELETING...' : 'DELETE PERMANENTLY'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );
@@ -957,7 +1221,7 @@ function StudyPlatformContent() {
 
 export default function StudyPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center font-mono font-bold">Loading Study Platform...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-[#FFFDF5]" />}>
       <StudyPlatformContent />
     </Suspense>
   );

@@ -8,6 +8,9 @@ const prisma = new PrismaClient();
 const MAX_SIZE_MB = parseInt(process.env.MAX_STUDY_PDF_SIZE_MB || '100', 10);
 const MAX_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
+const MAX_USER_STORAGE_MB = parseInt(process.env.MAX_USER_STORAGE_MB || '1000', 10);
+const MAX_USER_STORAGE_BYTES = MAX_USER_STORAGE_MB * 1024 * 1024;
+
 export async function POST(req: NextRequest) {
   try {
     const session = await getAuthSession();
@@ -41,7 +44,21 @@ export async function POST(req: NextRequest) {
 
     if (file.size > MAX_BYTES) {
       return NextResponse.json({
-        error: `File size exceeds maximum allowed limit of ${MAX_SIZE_MB}MB.`
+        error: `File size exceeds maximum allowed single file limit of ${MAX_SIZE_MB}MB.`
+      }, { status: 400 });
+    }
+
+    // Storage Quota Check
+    const userDocs = await prisma.studyDocument.findMany({
+      where: { userId: session.userId },
+      select: { fileSize: true }
+    });
+    const currentUsedBytes = userDocs.reduce((acc, d) => acc + (d.fileSize || 0), 0);
+
+    if (currentUsedBytes + file.size > MAX_USER_STORAGE_BYTES) {
+      return NextResponse.json({
+        error: 'Not enough study storage available. Delete an existing PDF to free up space.',
+        code: 'STORAGE_QUOTA_EXCEEDED'
       }, { status: 400 });
     }
 
