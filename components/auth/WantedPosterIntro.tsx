@@ -71,8 +71,13 @@ export function WantedPosterIntro({ onComplete }: WantedPosterIntroProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#121212] flex items-center justify-center overflow-hidden p-4 select-none">
-      
+    <div 
+      className="fixed inset-0 z-50 bg-cover bg-center flex items-center justify-center overflow-hidden p-4 select-none relative"
+      style={{ backgroundImage: "url('/images/bg-night-city.jpg')" }}
+    >
+      {/* Dark semi-transparent overlay so Night City image is clearly visible behind wanted poster */}
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+
       {/* Comic Book Speed Lines & Halftone Background */}
       <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#FFD83D_1.5px,transparent_1.5px)] [background-size:16px_16px]" />
 

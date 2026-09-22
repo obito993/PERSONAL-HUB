@@ -1,18 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, ShieldCheck, Zap, Lock, Mail, User, AlertCircle, Check } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Zap, Lock, Mail, User, AlertCircle } from 'lucide-react';
 import { sound } from '@/lib/sound';
 import { WantedPosterIntro } from './WantedPosterIntro';
-import { AuthAudio } from './AuthAudio';
 
 interface AuthPosterScreenProps {
   initialTab?: 'login' | 'signup';
 }
 
-export function AuthPosterScreen({ initialTab = 'login' }: AuthPosterScreenProps) {
+function AuthPosterContent({ initialTab = 'login' }: AuthPosterScreenProps) {
+  const searchParams = useSearchParams();
+  const isExpiredNotice = searchParams.get('expired') === 'true';
+  const returnUrl = searchParams.get('returnUrl') || '/';
+
   const [showIntro, setShowIntro] = useState(true);
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>(initialTab);
 
@@ -65,7 +68,7 @@ export function AuthPosterScreen({ initialTab = 'login' }: AuthPosterScreenProps
       setAccessGranted(true);
       sound.playLevelUp();
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = returnUrl;
       }, 600);
     } catch {
       setLoginError('Network error. Please try again.');
@@ -104,7 +107,7 @@ export function AuthPosterScreen({ initialTab = 'login' }: AuthPosterScreenProps
       setRegistered(true);
       sound.playLevelUp();
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = returnUrl;
       }, 600);
     } catch {
       setSignupError('Network error. Please try again.');
@@ -113,13 +116,13 @@ export function AuthPosterScreen({ initialTab = 'login' }: AuthPosterScreenProps
   };
 
   return (
-    <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4 relative overflow-hidden select-none">
+    <div 
+      className="min-h-screen bg-cover bg-center flex items-center justify-center p-4 relative overflow-hidden select-none"
+      style={{ backgroundImage: "url('/images/bg-night-city.jpg')" }}
+    >
       
-      {/* Background Halftone & Grid Atmosphere */}
-      <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#FFD83D_1.5px,transparent_1.5px)] [background-size:16px_16px]" />
-
-      {/* Audio Controller (Fixed Bottom-Left 🔊 / 🔇) */}
-      <AuthAudio />
+      {/* Translucent Dark Overlay so Night City background is clearly visible */}
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
 
       {/* Cinematic Intro Animation Overlay */}
       {showIntro ? (
@@ -149,11 +152,19 @@ export function AuthPosterScreen({ initialTab = 'login' }: AuthPosterScreenProps
             </motion.div>
           ) : (
             /* WANTED POSTER INTERFACE */
-            <div className="bg-[#FFFDF5] comic-border-lg shadow-comic-lg p-6 sm:p-8 w-full border-4 border-black space-y-6 relative">
+            <div className="bg-[#FFFDF5] comic-border-lg shadow-comic-lg p-6 sm:p-8 w-full border-4 border-black space-y-5 relative">
               
               {/* Tape Corners */}
               <div className="absolute -top-3 -left-3 w-10 h-6 bg-[#FFD83D]/90 border-2 border-black rotate-[-15deg] shadow-comic-sm" />
               <div className="absolute -top-3 -right-3 w-10 h-6 bg-[#FFD83D]/90 border-2 border-black rotate-[15deg] shadow-comic-sm" />
+
+              {/* SESSION EXPIRED NOTICE BANNER */}
+              {isExpiredNotice && (
+                <div className="bg-[#FF5A5F] text-white comic-border-sm p-3 font-mono text-xs font-black flex items-center gap-2 shadow-comic-sm animate-pulse">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>Your session expired after 30 minutes of inactivity. Please log in again to continue.</span>
+                </div>
+              )}
 
               {/* WANTED POSTER HEADER */}
               <div className="text-center border-b-4 border-black pb-4 space-y-1">
@@ -357,5 +368,13 @@ export function AuthPosterScreen({ initialTab = 'login' }: AuthPosterScreenProps
       )}
 
     </div>
+  );
+}
+
+export function AuthPosterScreen(props: AuthPosterScreenProps) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#121212]" />}>
+      <AuthPosterContent {...props} />
+    </Suspense>
   );
 }

@@ -8,10 +8,18 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'deion-hub-super-secret-jwt-key-2026-production'
 );
 
+// 30-minute inactivity timeout configuration (defaults to 30 mins)
+export const SESSION_IDLE_TIMEOUT_MINUTES = parseInt(
+  process.env.SESSION_IDLE_TIMEOUT_MINUTES || '30',
+  10
+);
+export const SESSION_IDLE_TIMEOUT_MS = SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000;
+
 export interface AuthSession {
   userId: string;
   email: string;
   name: string;
+  lastActivityAt?: number;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -23,7 +31,13 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export async function createSessionToken(payload: AuthSession): Promise<string> {
-  return await new SignJWT({ ...payload })
+  const lastActivityAt = payload.lastActivityAt || Date.now();
+  return await new SignJWT({
+    userId: payload.userId,
+    email: payload.email,
+    name: payload.name,
+    lastActivityAt,
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('30d')
@@ -33,10 +47,25 @@ export async function createSessionToken(payload: AuthSession): Promise<string> 
 export async function verifySessionToken(token: string): Promise<AuthSession | null> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userId = payload.userId as string;
+    const email = payload.email as string;
+    const name = payload.name as string;
+    const lastActivityAt = typeof payload.lastActivityAt === 'number'
+      ? payload.lastActivityAt
+      : Date.now();
+
+    // Check 30-minute idle inactivity timeout
+    const now = Date.now();
+    if (now - lastActivityAt > SESSION_IDLE_TIMEOUT_MS) {
+      console.warn(`[AUTH IDLE TIMEOUT] Session expired for userId ${userId}. Inactive for ${Math.round((now - lastActivityAt) / 60000)} mins`);
+      return null; // Session expired due to inactivity
+    }
+
     return {
-      userId: payload.userId as string,
-      email: payload.email as string,
-      name: payload.name as string,
+      userId,
+      email,
+      name,
+      lastActivityAt,
     };
   } catch {
     return null;

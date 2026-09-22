@@ -7,6 +7,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { ComicDock } from '@/components/layout/ComicDock';
 import { CommandPalette } from '@/components/command/CommandPalette';
 import { GlobalAudio } from '@/components/layout/GlobalAudio';
+import { IdleTimerProvider } from '@/components/auth/IdleTimerProvider';
 
 export function LayoutContent({ children }: { children: React.ReactNode }) {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
@@ -38,44 +39,46 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-between relative pb-28">
-      {/* Isolated fixed background image with brightness filter (does not break fixed stacking context for dock) */}
-      <div 
-        className="fixed inset-0 -z-10 bg-fixed bg-cover bg-center transition-all duration-300 pointer-events-none"
-        style={{ 
-          backgroundImage: getPageBackground(),
-          filter: pathname === '/login' || pathname === '/signup' ? 'brightness(0.7) contrast(1.1)' : 'brightness(1.12) contrast(1.05)'
-        }}
-      />
+    <IdleTimerProvider>
+      <div className="min-h-screen flex flex-col justify-between relative pb-28">
+        {/* Isolated fixed background image with brightness filter (does not break fixed stacking context for dock) */}
+        <div 
+          className="fixed inset-0 -z-10 bg-fixed bg-cover bg-center transition-all duration-300 pointer-events-none"
+          style={{ 
+            backgroundImage: getPageBackground(),
+            filter: pathname === '/login' || pathname === '/signup' ? 'brightness(0.7) contrast(1.1)' : 'brightness(1.12) contrast(1.05)'
+          }}
+        />
 
-      <Navbar onOpenCommand={() => setIsCommandOpen(true)} />
-      
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-8 relative z-0">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={pathname}
-            initial={{ opacity: 0, y: 12, scale: 0.995 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -12, scale: 0.995 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="w-full h-full"
-          >
-            {children}
-          </motion.div>
-        </AnimatePresence>
-      </main>
+        <Navbar onOpenCommand={() => setIsCommandOpen(true)} />
+        
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-8 relative z-0">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={pathname}
+              initial={{ opacity: 0, y: 12, scale: 0.995 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.995 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="w-full h-full"
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
+        </main>
 
-      {/* Floating React Bits Comic Dock fixed to viewport */}
-      <ComicDock onOpenFind={() => setIsCommandOpen(true)} />
+        {/* Floating React Bits Comic Dock fixed to viewport */}
+        <ComicDock onOpenFind={() => setIsCommandOpen(true)} />
 
-      {/* Global Background Audio Controller (🔊 / 🔇) */}
-      <GlobalAudio />
+        {/* Global Background Audio Controller (🔊 / 🔇) */}
+        <GlobalAudio />
 
-      <CommandPalette 
-        isOpen={isCommandOpen} 
-        onClose={() => setIsCommandOpen(false)} 
-      />
-    </div>
+        <CommandPalette 
+          isOpen={isCommandOpen} 
+          onClose={() => setIsCommandOpen(false)} 
+        />
+      </div>
+    </IdleTimerProvider>
   );
 }
 
