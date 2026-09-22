@@ -31,6 +31,8 @@ model User {
   habits            Habit[]
   tasks             Task[]
   expenses          Expense[]
+  studyDocs         StudyDocument[]
+  studyProgress     StudyProgress[]
 }
 
 model UserSettings {
@@ -179,3 +181,99 @@ model Expense {
   date      String
   createdAt DateTime @default(now())
 }
+
+model StudyDocument {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  fileName      String
+  fileSize      Int      @default(0)
+  pageCount     Int      @default(1)
+  extractedText String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  chapters      StudyChapter[]
+  progress      StudyProgress[]
+  flashcards    StudyFlashcard[]
+  quizQuestions StudyQuizQuestion[]
+
+  @@index([userId])
+}
+
+model StudyChapter {
+  id              String   @id @default(uuid())
+  documentId      String
+  document        StudyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chapterNumber   Int
+  title           String
+  content         String
+  summaryJson     String?  // Cached JSON summary
+  explanationText String?  // Cached teacher-style explanation
+  keyPointsJson   String?  // Cached JSON key points
+  createdAt       DateTime @default(now())
+
+  flashcards    StudyFlashcard[]
+  quizQuestions StudyQuizQuestion[]
+  progress      StudyProgress[]
+
+  @@index([documentId])
+}
+
+model StudyFlashcard {
+  id          String        @id @default(uuid())
+  userId      String
+  documentId  String
+  document    StudyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chapterId   String?
+  chapter     StudyChapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  question    String
+  answer      String
+  cardType    String        @default("concept") // definition | concept | formula | comparison | fact
+  mastered    Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+
+  @@index([userId, documentId])
+}
+
+model StudyQuizQuestion {
+  id            String        @id @default(uuid())
+  userId        String
+  documentId    String
+  document      StudyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chapterId     String?
+  chapter       StudyChapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  question      String
+  optionsJson   String        // JSON array of 4 choices
+  correctAnswer Int           // Index 0, 1, 2, or 3
+  explanation   String
+  topic         String        @default("General")
+  sourceSection String?
+  userAnswer    Int?
+  isCorrect     Boolean?
+  createdAt     DateTime      @default(now())
+
+  @@index([userId, documentId])
+}
+
+model StudyProgress {
+  id                 String        @id @default(uuid())
+  userId             String
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId         String
+  document           StudyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chapterId          String?
+  chapter            StudyChapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  mode               String        // SUMMARIZE | EXPLAIN | FLASHCARDS | QUIZ | KEY_POINTS
+  isCompleted        Boolean       @default(false)
+  score              Int           @default(0)
+  total              Int           @default(0)
+  masteredCardsCount Int           @default(0)
+  weakTopicsJson     String        @default("[]")
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([userId, documentId, chapterId, mode], name: "user_doc_chapter_mode")
+  @@index([userId, documentId])
+}
+
