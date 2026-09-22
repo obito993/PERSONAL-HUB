@@ -2,23 +2,46 @@ import { AI_CONFIG } from './config';
 import { ChatMessage, ProviderHealth } from './types';
 
 export class OllamaClient {
-  private static baseUrl = AI_CONFIG.ollama.baseUrl;
-  private static defaultModel = AI_CONFIG.ollama.defaultModel;
+  private static get baseUrl() {
+    return AI_CONFIG.ollama.baseUrl;
+  }
+
+  private static get defaultModel() {
+    return AI_CONFIG.ollama.defaultModel;
+  }
+
+  private static getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const key = AI_CONFIG.ollama.apiKey;
+    if (key && key.trim()) {
+      headers['Authorization'] = `Bearer ${key.trim()}`;
+    }
+    return headers;
+  }
 
   /**
    * Check Ollama connectivity and available installed models
    */
   public static async getHealth(): Promise<ProviderHealth> {
     try {
+      const headers: Record<string, string> = {};
+      const key = AI_CONFIG.ollama.apiKey;
+      if (key && key.trim()) {
+        headers['Authorization'] = `Bearer ${key.trim()}`;
+      }
+
       const res = await fetch(`${this.baseUrl}/api/tags`, {
         method: 'GET',
+        headers,
         signal: AbortSignal.timeout(3000),
       });
 
       if (!res.ok) {
         return {
           name: 'ollama',
-          displayName: 'Ollama (Local)',
+          displayName: 'Ollama',
           status: 'OFFLINE',
           model: this.defaultModel,
           error: `HTTP ${res.status}: Ollama server unreachable`,
@@ -31,11 +54,11 @@ export class OllamaClient {
       
       // Check if configured model (or base name) is present
       const configuredModel = this.defaultModel;
-      const isAvailable = models.some(m => m === configuredModel || m.startsWith(`${configuredModel}:`));
+      const isAvailable = models.length === 0 || models.some(m => m === configuredModel || m.startsWith(`${configuredModel.split(':')[0]}:`) || configuredModel.startsWith(`${m.split(':')[0]}:`));
 
       return {
         name: 'ollama',
-        displayName: 'Ollama (Local)',
+        displayName: 'Ollama',
         status: isAvailable ? 'ONLINE' : 'MODEL_UNAVAILABLE',
         model: configuredModel,
         availableModels: models,
@@ -47,7 +70,7 @@ export class OllamaClient {
     } catch (err) {
       return {
         name: 'ollama',
-        displayName: 'Ollama (Local)',
+        displayName: 'Ollama',
         status: 'OFFLINE',
         model: this.defaultModel,
         error: 'Ollama is offline or unreachable at ' + this.baseUrl,
@@ -85,7 +108,7 @@ export class OllamaClient {
 
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders(),
       body: JSON.stringify({
         model: modelToUse,
         messages,
@@ -137,7 +160,7 @@ export class OllamaClient {
 
     const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders(),
       body: JSON.stringify({
         model: modelToUse,
         messages,
@@ -190,3 +213,4 @@ export class OllamaClient {
     });
   }
 }
+

@@ -3,7 +3,8 @@ import { ProviderName } from './types';
 export const AI_CONFIG = {
   ollama: {
     baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
-    defaultModel: process.env.OLLAMA_MODEL || 'llama3.2',
+    defaultModel: process.env.OLLAMA_MODEL || 'llama3.2:latest',
+    apiKey: process.env.OLLAMA_API_KEY || '',
   },
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
@@ -18,3 +19,4 @@ export const AI_CONFIG = {
     fallbackEnabled: process.env.AI_FALLBACK_ENABLED !== 'false',
   },
 };
+
