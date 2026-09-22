@@ -183,21 +183,29 @@ model Expense {
 }
 
 model StudyDocument {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title         String
-  fileName      String
-  fileSize      Int      @default(0)
-  pageCount     Int      @default(1)
-  extractedText   String   @default("")
-  summaryJson     String?  // Cached JSON summary for full document
-  explanationText String?  // Cached teacher-style explanation for full document
-  keyPointsJson   String?  // Cached JSON key points for full document
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  fileName         String
+  fileSize         Int      @default(0)
+  pageCount        Int      @default(1)
+  extractedText    String   @default("")
+  blobPathname     String?  // Private Vercel Blob pathname: users/{userId}/study/{documentId}/original/{safeFilename}
+  blobUrl          String?  // Private Blob URL / identifier
+  mimeType         String   @default("application/pdf")
+  processingStatus String   @default("PENDING") // PENDING | UPLOADING | UPLOADED | EXTRACTING | CHUNKING | READY | FAILED
+  processingProgress Int    @default(0)
+  processingError  String?
+  processedPages   Int      @default(0)
+  summaryJson      String?  // Cached JSON summary for full document
+  explanationText  String?  // Cached teacher-style explanation for full document
+  keyPointsJson    String?  // Cached JSON key points for full document
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   chapters      StudyChapter[]
+  chunks        StudyChunk[]
   progress      StudyProgress[]
   flashcards    StudyFlashcard[]
   quizQuestions StudyQuizQuestion[]
@@ -217,11 +225,29 @@ model StudyChapter {
   keyPointsJson   String?  // Cached JSON key points
   createdAt       DateTime @default(now())
 
+  chunks        StudyChunk[]
   flashcards    StudyFlashcard[]
   quizQuestions StudyQuizQuestion[]
   progress      StudyProgress[]
 
   @@index([documentId])
+}
+
+model StudyChunk {
+  id          String        @id @default(uuid())
+  documentId  String
+  document    StudyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chapterId   String?
+  chapter     StudyChapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chunkIndex  Int
+  pageStart   Int
+  pageEnd     Int
+  content     String
+  summaryText String?
+  createdAt   DateTime      @default(now())
+
+  @@index([documentId, chunkIndex])
+  @@index([documentId, chapterId])
 }
 
 model StudyFlashcard {

@@ -8,16 +8,26 @@ export interface ExtractedChapter {
   endPage?: number;
 }
 
+export interface ExtractedChunk {
+  chunkIndex: number;
+  chapterNumber?: number;
+  pageStart: number;
+  pageEnd: number;
+  content: string;
+}
+
 export interface PDFProcessResult {
   fullText: string;
   pageCount: number;
   chapters: ExtractedChapter[];
+  chunks: ExtractedChunk[];
   pageTexts: string[];
 }
 
 /**
  * Server-side PDF parser using unpdf.
  * Does NOT require canvas, web workers, or pdf.worker.mjs assets.
+ * Handles large textbook/notes PDFs up to 300+ pages.
  * Compatible with Next.js Turbopack, npm run dev, npm run build, and Vercel serverless.
  */
 export async function processPDFBuffer(buffer: Buffer, fileName: string): Promise<PDFProcessResult> {
@@ -39,11 +49,13 @@ export async function processPDFBuffer(buffer: Buffer, fileName: string): Promis
     }
 
     const chapters = detectChapters(fullText, pageTexts, fileName);
+    const chunks = generateChunks(pageTexts, chapters);
 
     return {
       fullText,
       pageCount,
       chapters,
+      chunks,
       pageTexts,
     };
   } catch (err: any) {
@@ -53,6 +65,54 @@ export async function processPDFBuffer(buffer: Buffer, fileName: string): Promis
     }
     throw new Error(`PDF Processing Error: ${err?.message || 'Failed to extract text from PDF document'}`);
   }
+}
+
+/**
+ * Generates 2,000-word processing chunks across pages and chapters.
+ */
+function generateChunks(pageTexts: string[], chapters: ExtractedChapter[]): ExtractedChunk[] {
+  const chunks: ExtractedChunk[] = [];
+  let chunkIndex = 1;
+
+  if (chapters.length > 0) {
+    for (const ch of chapters) {
+      const words = ch.content.split(/\s+/);
+      const wordsPerChunk = 2000;
+      const numChunks = Math.max(1, Math.ceil(words.length / wordsPerChunk));
+
+      for (let i = 0; i < numChunks; i++) {
+        const chunkWords = words.slice(i * wordsPerChunk, (i + 1) * wordsPerChunk);
+        const content = chunkWords.join(' ').trim();
+        if (content.length > 50) {
+          chunks.push({
+            chunkIndex: chunkIndex++,
+            chapterNumber: ch.chapterNumber,
+            pageStart: ch.startPage || 1,
+            pageEnd: ch.endPage || pageTexts.length || 1,
+            content,
+          });
+        }
+      }
+    }
+  } else {
+    // Fallback page-based chunking
+    const totalPages = Math.max(1, pageTexts.length);
+    const pagesPerChunk = Math.max(1, Math.min(10, Math.ceil(totalPages / 5)));
+    for (let p = 0; p < totalPages; p += pagesPerChunk) {
+      const chunkPages = pageTexts.slice(p, p + pagesPerChunk);
+      const content = chunkPages.join('\n\n').trim();
+      if (content.length > 50) {
+        chunks.push({
+          chunkIndex: chunkIndex++,
+          pageStart: p + 1,
+          pageEnd: Math.min(totalPages, p + pagesPerChunk),
+          content,
+        });
+      }
+    }
+  }
+
+  return chunks;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import { PrismaClient } from '@prisma/client';
 
@@ -11,6 +11,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized session' }, { status: 401 });
     }
 
+    // Strict user isolation check
     const docs = await prisma.studyDocument.findMany({
       where: { userId: session.userId },
       orderBy: { createdAt: 'desc' },
@@ -20,6 +21,9 @@ export async function GET() {
         fileName: true,
         fileSize: true,
         pageCount: true,
+        processingStatus: true,
+        processingProgress: true,
+        blobPathname: true,
         createdAt: true,
         chapters: {
           select: {
