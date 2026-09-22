@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Navbar } from '@/components/layout/Navbar';
 import { ComicDock } from '@/components/layout/ComicDock';
 import { CommandPalette } from '@/components/command/CommandPalette';
+import { GlobalAudio } from '@/components/layout/GlobalAudio';
 
 export function LayoutContent({ children }: { children: React.ReactNode }) {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
@@ -27,6 +28,7 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
 
   // Determine signature dynamic comic background per page route
   const getPageBackground = () => {
+    if (pathname === '/login' || pathname === '/signup') return "url('/images/bg-night-city.jpg')";
     if (pathname.startsWith('/tools')) return "url('/images/bg-tools-yellow.jpg')";
     if (pathname.startsWith('/study')) return "url('/images/bg-study-pink.jpg')";
     if (pathname.startsWith('/ai')) return "url('/images/bg-ai-purple.jpg')";
@@ -42,7 +44,7 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
         className="fixed inset-0 -z-10 bg-fixed bg-cover bg-center transition-all duration-300 pointer-events-none"
         style={{ 
           backgroundImage: getPageBackground(),
-          filter: 'brightness(1.12) contrast(1.05)'
+          filter: pathname === '/login' || pathname === '/signup' ? 'brightness(0.7) contrast(1.1)' : 'brightness(1.12) contrast(1.05)'
         }}
       />
 
@@ -65,6 +67,9 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
 
       {/* Floating React Bits Comic Dock fixed to viewport */}
       <ComicDock onOpenFind={() => setIsCommandOpen(true)} />
+
+      {/* Global Background Audio Controller (🔊 / 🔇) */}
+      <GlobalAudio />
 
       <CommandPalette 
         isOpen={isCommandOpen} 
