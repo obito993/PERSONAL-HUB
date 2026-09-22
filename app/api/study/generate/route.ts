@@ -47,13 +47,19 @@ export async function POST(req: NextRequest) {
 
     // 1. SUMMARIZE MODE
     if (mode === 'SUMMARIZE') {
-      if (!forceRefresh && !isFullDoc && targetChapter?.summaryJson) {
-        return NextResponse.json({ result: targetChapter.summaryJson, cached: true });
+      const cachedSummary = isFullDoc ? doc.summaryJson : targetChapter?.summaryJson;
+      if (!forceRefresh && cachedSummary) {
+        return NextResponse.json({ result: cachedSummary, cached: true });
       }
 
       const summary = await AIStudyService.generateSummary(targetTitle, targetContent, isFullDoc);
 
-      if (!isFullDoc && targetChapter) {
+      if (isFullDoc) {
+        await prisma.studyDocument.update({
+          where: { id: doc.id },
+          data: { summaryJson: summary }
+        });
+      } else if (targetChapter) {
         await prisma.studyChapter.update({
           where: { id: targetChapter.id },
           data: { summaryJson: summary }
@@ -65,13 +71,19 @@ export async function POST(req: NextRequest) {
 
     // 2. EXPLAIN MODE
     if (mode === 'EXPLAIN') {
-      if (!forceRefresh && !isFullDoc && targetChapter?.explanationText) {
-        return NextResponse.json({ result: targetChapter.explanationText, cached: true });
+      const cachedExplanation = isFullDoc ? doc.explanationText : targetChapter?.explanationText;
+      if (!forceRefresh && cachedExplanation) {
+        return NextResponse.json({ result: cachedExplanation, cached: true });
       }
 
       const explanation = await AIStudyService.generateExplanation(targetTitle, targetContent, isFullDoc);
 
-      if (!isFullDoc && targetChapter) {
+      if (isFullDoc) {
+        await prisma.studyDocument.update({
+          where: { id: doc.id },
+          data: { explanationText: explanation }
+        });
+      } else if (targetChapter) {
         await prisma.studyChapter.update({
           where: { id: targetChapter.id },
           data: { explanationText: explanation }
@@ -96,9 +108,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ cards: existingCards, cached: true });
       }
 
+      // If forcing refresh, delete old cards first for this specific scope
+      if (forceRefresh) {
+        await prisma.studyFlashcard.deleteMany({
+          where: {
+            userId: session.userId,
+            documentId,
+            chapterId: isFullDoc ? null : chapterId
+          }
+        });
+      }
+
       const generated = await AIStudyService.generateFlashcards(targetTitle, targetContent, isFullDoc);
 
-      // Save cards to DB
       const createdCards = await Promise.all(
         generated.map(card =>
           prisma.studyFlashcard.create({
@@ -138,7 +160,18 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const coveredTopics = existingQuestions.map(q => q.topic);
+      // If forcing refresh, delete old quiz questions for this scope
+      if (forceRefresh) {
+        await prisma.studyQuizQuestion.deleteMany({
+          where: {
+            userId: session.userId,
+            documentId,
+            chapterId: isFullDoc ? null : chapterId
+          }
+        });
+      }
+
+      const coveredTopics = forceRefresh ? [] : existingQuestions.map(q => q.topic);
       const generated = await AIStudyService.generateQuizQuestions(targetTitle, targetContent, coveredTopics);
 
       const createdQuestions = await Promise.all(
@@ -170,16 +203,22 @@ export async function POST(req: NextRequest) {
 
     // 5. KEY POINTS MODE
     if (mode === 'KEY_POINTS') {
-      if (!forceRefresh && !isFullDoc && targetChapter?.keyPointsJson) {
+      const cachedKeyPoints = isFullDoc ? doc.keyPointsJson : targetChapter?.keyPointsJson;
+      if (!forceRefresh && cachedKeyPoints) {
         return NextResponse.json({
-          keyPoints: JSON.parse(targetChapter.keyPointsJson),
+          keyPoints: JSON.parse(cachedKeyPoints),
           cached: true
         });
       }
 
       const keyPoints = await AIStudyService.generateKeyPoints(targetTitle, targetContent, isFullDoc);
 
-      if (!isFullDoc && targetChapter) {
+      if (isFullDoc) {
+        await prisma.studyDocument.update({
+          where: { id: doc.id },
+          data: { keyPointsJson: JSON.stringify(keyPoints) }
+        });
+      } else if (targetChapter) {
         await prisma.studyChapter.update({
           where: { id: targetChapter.id },
           data: { keyPointsJson: JSON.stringify(keyPoints) }

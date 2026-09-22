@@ -615,6 +615,14 @@ function StudyPlatformContent() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'SUMMARIZE', true)}
+                      className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm"
+                      title="Generate new fresh summary with AI"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>REGENERATE NEW</span>
+                    </button>
+                    <button
                       onClick={() => navigator.clipboard.writeText(summaryText)}
                       className="bg-gray-100 hover:bg-gray-200 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1"
                       title="Copy Summary"
@@ -634,11 +642,21 @@ function StudyPlatformContent() {
             {/* MODE 2: EXPLAIN */}
             {activeMode === 'EXPLAIN' && (
               <div className="space-y-4">
-                <div className="pb-3 border-b-2 border-black">
-                  <h2 className="font-black text-xl uppercase">TEACHER-STYLE BREAKDOWN</h2>
-                  <span className="font-mono text-xs font-bold text-gray-700">
-                    Simplified concepts & step-by-step explanations for {selectedChapterName}
-                  </span>
+                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                  <div>
+                    <h2 className="font-black text-xl uppercase">TEACHER-STYLE BREAKDOWN</h2>
+                    <span className="font-mono text-xs font-bold text-gray-700">
+                      Simplified concepts & step-by-step explanations for {selectedChapterName}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'EXPLAIN', true)}
+                    className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2"
+                    title="Generate new fresh explanation with AI"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>REGENERATE NEW</span>
+                  </button>
                 </div>
 
                 <div className="bg-[#FFFDF5] comic-border-sm p-4 font-sans text-sm text-gray-900 leading-relaxed whitespace-pre-line space-y-4">
@@ -657,6 +675,14 @@ function StudyPlatformContent() {
                       {flashcards.length} Cards Generated • {flashcards.filter(c => c.mastered).length} Mastered
                     </span>
                   </div>
+                  <button
+                    onClick={() => activeDoc && loadModeContent(activeDoc.id, selectedChapterId, 'FLASHCARDS', true)}
+                    className="bg-[#FFD83D] hover:bg-yellow-400 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1 shadow-comic-sm shrink-0 ml-2"
+                    title="Generate new fresh flashcards with AI"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>REGENERATE NEW</span>
+                  </button>
                 </div>
 
                 {flashcards.length > 0 ? (

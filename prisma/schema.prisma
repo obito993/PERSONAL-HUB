@@ -190,9 +190,12 @@ model StudyDocument {
   fileName      String
   fileSize      Int      @default(0)
   pageCount     Int      @default(1)
-  extractedText String   @default("")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  extractedText   String   @default("")
+  summaryJson     String?  // Cached JSON summary for full document
+  explanationText String?  // Cached teacher-style explanation for full document
+  keyPointsJson   String?  // Cached JSON key points for full document
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   chapters      StudyChapter[]
   progress      StudyProgress[]
