@@ -19,588 +19,920 @@ import {
   Flame, 
   Award, 
   ChevronRight,
-  ArrowRight
+  ArrowRight,
+  RotateCw,
+  HelpCircle,
+  Lightbulb,
+  CheckCircle2,
+  XCircle,
+  Download,
+  Menu,
+  X
 } from 'lucide-react';
-import { PDFDocument } from 'pdf-lib';
-import { storage, NoteItem, UserState } from '@/lib/storage';
-import { processAIRequest } from '@/lib/ai';
 import { sound } from '@/lib/sound';
 
+interface StudyChapter {
+  id: string;
+  chapterNumber: number;
+  title: string;
+  content: string;
+  summaryJson?: string;
+  explanationText?: string;
+  keyPointsJson?: string;
+}
+
+interface StudyDocument {
+  id: string;
+  title: string;
+  fileName: string;
+  fileSize: number;
+  pageCount: number;
+  chapters: StudyChapter[];
+  progress: any[];
+}
+
 interface Flashcard {
+  id: string;
   question: string;
   answer: string;
+  cardType: string;
+  mastered: boolean;
 }
 
 interface QuizQuestion {
+  id: string;
   question: string;
   options: string[];
-  answer: string;
+  correctAnswer: number;
   explanation: string;
+  topic: string;
+  sourceSection?: string;
+  userAnswer?: number | null;
+  isCorrect?: boolean | null;
 }
 
-function StudyLabContent() {
+interface KeyPoint {
+  category: 'IMPORTANT' | 'DEFINITION' | 'FORMULA' | 'CONCEPT' | 'EXAMPLE' | 'REMEMBER';
+  point: string;
+  importance: 'high' | 'medium';
+}
+
+type ModeType = 'SUMMARIZE' | 'EXPLAIN' | 'FLASHCARDS' | 'QUIZ' | 'KEY_POINTS';
+
+function StudyPlatformContent() {
   const searchParams = useSearchParams();
-  const initialMode = searchParams.get('mode') as 'THEORY' | 'NOTES' | 'DASHBOARD' || 'THEORY';
+  const initialDocId = searchParams.get('docId') || '';
 
-  const [activeMode, setActiveMode] = useState<'THEORY' | 'NOTES' | 'DASHBOARD'>(initialMode);
-  const [userState, setUserState] = useState<UserState | null>(null);
+  // App State
+  const [documents, setDocuments] = useState<StudyDocument[]>([]);
+  const [activeDoc, setActiveDoc] = useState<StudyDocument | null>(null);
+  const [selectedChapterId, setSelectedChapterId] = useState<string>('ALL'); // 'ALL' or chapter ID
+  const [activeMode, setActiveMode] = useState<ModeType>('SUMMARIZE');
+  
+  // UI & Loading
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [isLoadingMode, setIsLoadingMode] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
-  // Document Upload State
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [docText, setDocText] = useState<string>('');
-  const [pageCount, setPageCount] = useState<number | null>(null);
-  const [isProcessingDoc, setIsProcessingDoc] = useState(false);
-  const [docSummary, setDocSummary] = useState<string | null>(null);
-
-  // Flashcards & Quizzes
+  // Content per mode
+  const [summaryText, setSummaryText] = useState<string>('');
+  const [explanationText, setExplanationText] = useState<string>('');
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [currentCardIdx, setCurrentCardIdx] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
-  const [quizzes, setQuizzes] = useState<QuizQuestion[]>([]);
+  
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [currentQuizIdx, setCurrentQuizIdx] = useState(0);
+  const [selectedQuizOption, setSelectedQuizOption] = useState<number | null>(null);
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizScore, setQuizScore] = useState({ correct: 0, total: 0 });
+  const [quizComplete, setQuizComplete] = useState(false);
 
-  // Deion AI Study Tutor
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
-  const [loadingAi, setLoadingAi] = useState(false);
+  const [keyPoints, setKeyPoints] = useState<KeyPoint[]>([]);
+  const [keyPointFilter, setKeyPointFilter] = useState('ALL');
 
-  // User Notes State
-  const [notes, setNotes] = useState<NoteItem[]>([]);
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteContent, setNoteContent] = useState('');
-  const [noteTag, setNoteTag] = useState('Python');
-  const [noteSearch, setNoteSearch] = useState('');
-  const [selectedTag, setSelectedTag] = useState('ALL');
+  // AI Tutor Ask box
+  const [tutorQuery, setTutorQuery] = useState('');
+  const [tutorAnswer, setTutorAnswer] = useState('');
+  const [loadingTutor, setLoadingTutor] = useState(false);
 
+  // Initial Load
   useEffect(() => {
-    setUserState(storage.getUserState());
-    setNotes(storage.getNotes());
+    fetchDocuments();
   }, []);
 
-  // Document Processing
+  const fetchDocuments = async () => {
+    try {
+      const res = await fetch('/api/study/documents');
+      const data = await res.json();
+      if (data.documents && data.documents.length > 0) {
+        setDocuments(data.documents);
+        const docToSelect = initialDocId 
+          ? data.documents.find((d: any) => d.id === initialDocId) || data.documents[0]
+          : data.documents[0];
+        fetchDocumentDetails(docToSelect.id);
+      }
+    } catch (err) {
+      console.error('Error fetching study documents:', err);
+    }
+  };
+
+  const fetchDocumentDetails = async (docId: string) => {
+    try {
+      const res = await fetch(`/api/study/documents/${docId}`);
+      const data = await res.json();
+      if (data.document) {
+        setActiveDoc(data.document);
+        loadModeContent(data.document.id, selectedChapterId, activeMode);
+      }
+    } catch (err) {
+      console.error('Error fetching document details:', err);
+    }
+  };
+
+  // Upload PDF Handler
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadedFile(file);
-    setIsProcessingDoc(true);
-    setDocSummary(null);
+    setIsUploading(true);
+    setUploadStatus('Extracting PDF text...');
     sound.playPop();
 
     try {
-      if (file.type === 'application/pdf') {
-        const buffer = await file.arrayBuffer();
-        const pdfDoc = await PDFDocument.load(buffer);
-        setPageCount(pdfDoc.getPageCount());
-        setDocText(`[PDF Document Loaded: ${file.name}, ${pdfDoc.getPageCount()} pages, ${(file.size / 1024).toFixed(1)} KB]`);
-      } else {
-        const text = await file.text();
-        setDocText(text || `[Image/Document Loaded: ${file.name}, ${(file.size / 1024).toFixed(1)} KB]`);
-        setPageCount(1);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      setUploadStatus('Detecting semantic chapters...');
+      const res = await fetch('/api/study/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        // Stale session: userId in JWT cookie doesn't match any user in the database
+        if (data.code === 'SESSION_USER_NOT_FOUND' || res.status === 401) {
+          const confirmed = window.confirm(
+            '⚠️ Your session has expired.\n\nYou need to log out and log back in to upload PDFs.\n\nClick OK to log out now.'
+          );
+          if (confirmed) {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+          }
+          return;
+        }
+        alert(data.error || 'Failed to process PDF');
+        return;
       }
-    } catch {
-      setDocText(`[Loaded Document: ${file.name}]`);
-      setPageCount(1);
+
+      sound.playLevelUp();
+      await fetchDocuments();
+      if (data.document) {
+        setActiveDoc(data.document);
+        setSelectedChapterId('ALL');
+        loadModeContent(data.document.id, 'ALL', activeMode);
+      }
+    } catch (err) {
+      alert('Error uploading PDF file');
     } finally {
-      setIsProcessingDoc(false);
+      setIsUploading(false);
+      setUploadStatus('');
     }
   };
 
-  // Deion Study Actions
-  const handleAiAction = async (actionType: 'SUMMARIZE' | 'EXPLAIN' | 'FLASHCARDS' | 'QUIZ' | 'KEY_POINTS') => {
-    if (!docText && !uploadedFile) {
-      alert('Please upload a document or paste study notes first!');
-      return;
-    }
+  // Load Content for selected (docId, chapterId, mode)
+  const loadModeContent = async (docId: string, chapterId: string, mode: ModeType, forceRefresh = false) => {
+    if (!docId) return;
 
-    setLoadingAi(true);
+    setIsLoadingMode(true);
+    setTutorAnswer('');
     sound.playPop();
 
     try {
-      if (actionType === 'FLASHCARDS') {
-        const res = await processAIRequest({
-          tool: 'flashcards',
-          prompt: docText || uploadedFile?.name || 'Study Flashcards',
-        });
-        setDocSummary(res.result);
-      } else if (actionType === 'QUIZ') {
-        const res = await processAIRequest({
-          tool: 'quiz',
-          prompt: docText || uploadedFile?.name || 'Study Quiz',
-        });
-        setDocSummary(res.result);
-      } else {
-        const res = await processAIRequest({
-          tool: 'study_plan',
-          prompt: `${actionType}: ${docText || uploadedFile?.name}`,
-        });
-        setDocSummary(res.result);
+      const res = await fetch('/api/study/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: docId,
+          chapterId: chapterId === 'ALL' ? null : chapterId,
+          mode,
+          forceRefresh,
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        console.error('Generate error:', data.error);
+        setIsLoadingMode(false);
+        return;
       }
-    } catch {
-      setDocSummary('THE AI SIGNAL DROPPED. Please try again.');
+
+      if (mode === 'SUMMARIZE') {
+        setSummaryText(data.result || 'No summary available.');
+      } else if (mode === 'EXPLAIN') {
+        setExplanationText(data.result || 'No explanation available.');
+      } else if (mode === 'FLASHCARDS') {
+        setFlashcards(data.cards || []);
+        setCurrentCardIdx(0);
+        setIsCardFlipped(false);
+      } else if (mode === 'QUIZ') {
+        const qList: QuizQuestion[] = data.questions || [];
+        setQuizQuestions(qList);
+        setCurrentQuizIdx(0);
+        setSelectedQuizOption(null);
+        setQuizSubmitted(false);
+        setQuizComplete(false);
+        const correctCount = qList.filter(q => q.isCorrect === true).length;
+        setQuizScore({ correct: correctCount, total: qList.length });
+      } else if (mode === 'KEY_POINTS') {
+        setKeyPoints(data.keyPoints || []);
+      }
+    } catch (err) {
+      console.error('Error loading mode content:', err);
     } finally {
-      setLoadingAi(false);
+      setIsLoadingMode(false);
     }
   };
 
-  // AI Tutor Query
-  const askAiTutor = async (e: React.FormEvent) => {
+  // Select Chapter
+  const handleSelectChapter = (chapterId: string) => {
+    setSelectedChapterId(chapterId);
+    setMobileDrawerOpen(false);
+    if (activeDoc) {
+      loadModeContent(activeDoc.id, chapterId, activeMode);
+    }
+  };
+
+  // Change Mode Tab
+  const handleChangeMode = (mode: ModeType) => {
+    setActiveMode(mode);
+    if (activeDoc) {
+      loadModeContent(activeDoc.id, selectedChapterId, mode);
+    }
+  };
+
+  // Flashcard Mastery Toggle
+  const handleToggleCardMastery = async (cardId: string, currentMastered: boolean) => {
+    sound.playPop();
+    const nextMastered = !currentMastered;
+    setFlashcards(prev => prev.map(c => c.id === cardId ? { ...c, mastered: nextMastered } : c));
+
+    try {
+      await fetch('/api/study/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: activeDoc?.id,
+          chapterId: selectedChapterId === 'ALL' ? null : selectedChapterId,
+          type: 'FLASHCARD_MASTERY',
+          cardId,
+          mastered: nextMastered,
+        })
+      });
+    } catch (err) {
+      console.error('Mastery update error:', err);
+    }
+  };
+
+  // Quiz Option Click
+  const handleAnswerQuiz = async (optionIdx: number) => {
+    if (quizSubmitted) return;
+
+    setSelectedQuizOption(optionIdx);
+    setQuizSubmitted(true);
+    sound.playPop();
+
+    const currentQ = quizQuestions[currentQuizIdx];
+    const isCorrect = optionIdx === currentQ.correctAnswer;
+
+    if (isCorrect) sound.playLevelUp();
+
+    setQuizScore(prev => ({
+      correct: prev.correct + (isCorrect ? 1 : 0),
+      total: prev.total + 1
+    }));
+
+    try {
+      await fetch('/api/study/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentId: activeDoc?.id,
+          chapterId: selectedChapterId === 'ALL' ? null : selectedChapterId,
+          type: 'QUIZ_SUBMISSION',
+          questionId: currentQ.id,
+          userAnswer: optionIdx,
+          score: quizScore.correct + (isCorrect ? 1 : 0),
+          total: quizScore.total + 1,
+        })
+      });
+    } catch (err) {
+      console.error('Quiz submission error:', err);
+    }
+  };
+
+  // Quiz Next Question
+  const handleNextQuizQuestion = () => {
+    sound.playPop();
+    if (currentQuizIdx < quizQuestions.length - 1) {
+      setCurrentQuizIdx(prev => prev + 1);
+      setSelectedQuizOption(null);
+      setQuizSubmitted(false);
+    } else {
+      setQuizComplete(true);
+    }
+  };
+
+  // AI Tutor Submit
+  const handleAskTutor = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!aiPrompt.trim()) return;
+    if (!tutorQuery.trim() || !activeDoc) return;
 
-    setLoadingAi(true);
+    setLoadingTutor(true);
     sound.playPop();
 
     try {
+      const selectedCh = activeDoc.chapters.find(c => c.id === selectedChapterId);
+      const docContext = selectedCh ? selectedCh.content : activeDoc.title;
+
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'chat',
           mode: 'STUDY',
-          prompt: `Document Context: ${docText.slice(0, 2000)}\nUser Question: ${aiPrompt}`
+          prompt: `Document Context (${selectedCh ? selectedCh.title : 'Full Document'}):\n${docContext.slice(0, 3000)}\n\nStudent Question: ${tutorQuery}`
         })
       });
       const data = await res.json();
-      setAiResponse(data.result);
+      setTutorAnswer(data.result || 'No response returned.');
       sound.playLevelUp();
-    } catch {
-      setAiResponse("⚡ [AI TUTOR]: Key concept breakdown prepared for your question!");
+    } catch (err) {
+      setTutorAnswer('⚡ Could not connect to AI Tutor right now.');
     } finally {
-      setLoadingAi(false);
-      setAiPrompt('');
+      setLoadingTutor(false);
+      setTutorQuery('');
     }
   };
 
-  // Notes Management
-  const handleSaveNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteTitle.trim()) return;
-
-    const updated = storage.addNote(noteTitle, noteContent, noteTag);
-    setNotes(updated);
-    setNoteTitle('');
-    setNoteContent('');
-    sound.playPop();
-  };
-
-  const handleDeleteNote = (id: string) => {
-    const updated = storage.deleteNote(id);
-    setNotes(updated);
-    sound.playPop();
-  };
-
-  const filteredNotes = notes.filter(n => {
-    const matchesSearch = n.title.toLowerCase().includes(noteSearch.toLowerCase()) || n.content.toLowerCase().includes(noteSearch.toLowerCase());
-    const matchesTag = selectedTag === 'ALL' || n.subject === selectedTag;
-    return matchesSearch && matchesTag;
-  });
-
-  const TAGS = ['ALL', 'Python', 'SQL', 'AI', 'Data Analytics', 'Web Development', 'Interview'];
+  const selectedChapterName = selectedChapterId === 'ALL' 
+    ? 'ALL CHAPTERS (FULL PDF)'
+    : activeDoc?.chapters.find(c => c.id === selectedChapterId)?.title || 'Chapter';
 
   return (
-    <div className="space-y-8 py-6">
+    <div className="min-h-screen p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
 
-      {/* 1. Page Identity Banner */}
-      <div className="bg-[#B9A7FF] text-black comic-border-lg p-6 sm:p-8 shadow-comic-lg space-y-4 rounded-2xl relative overflow-hidden">
-        <div className="flex items-center justify-between">
+      {/* Top Header & Document Controls */}
+      <div className="bg-[#FFD83D] comic-border-lg shadow-comic-lg p-6 relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
           <div className="flex items-center gap-2">
-            <span className="bg-black text-white font-mono font-black text-xs px-3 py-1 border border-white rounded-lg">
-              ★ ISSUE #003 ★
-            </span>
-            <span className="comic-sticker comic-sticker-yellow text-xs font-black">
-              COMIC NOTEBOOK × AI TUTOR × THEORY LAB
-            </span>
+            <span className="comic-badge comic-badge-red text-xs">AI PDF LEARNING PLATFORM</span>
+            <span className="font-mono text-xs font-bold bg-black text-white px-2 py-0.5 rounded">PDF PARSER & CHUNK ENGINE</span>
           </div>
-        </div>
-
-        <div className="space-y-1">
-          <h1 className="font-black text-4xl sm:text-6xl uppercase tracking-tight flex items-center gap-3">
-            <BookOpen className="w-10 h-10 stroke-[2.8]" />
-            <span>THE STUDY LAB</span>
+          <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight mt-1">
+            {activeDoc ? activeDoc.title : 'STUDY HUB'}
           </h1>
-          <p className="font-bold text-xs sm:text-base italic text-black/90">
-            &quot;TURN ANYTHING INTO SOMETHING YOU UNDERSTAND.&quot;
+          <p className="text-xs sm:text-sm font-bold text-gray-800 font-mono mt-1">
+            {activeDoc 
+              ? `📄 ${activeDoc.fileName} • ${activeDoc.chapters.length} Chapters Detected • ${activeDoc.pageCount} Pages`
+              : 'Upload any PDF textbook, paper, or notes to generate structured summaries, explanations, flashcards, quizzes & key points.'}
           </p>
         </div>
-      </div>
 
-      {/* 2. Main Navigation Tabs */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => { setActiveMode('THEORY'); sound.playPop(); }}
-          className={`btn-comic text-xs px-5 py-2.5 font-black flex items-center gap-2 ${
-            activeMode === 'THEORY' ? 'bg-[#B9A7FF] text-black scale-105 shadow-comic-md' : 'btn-comic-white'
-          }`}
-        >
-          <BookOpen className="w-4 h-4" />
-          <span>THEORY LAB</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveMode('NOTES'); sound.playPop(); }}
-          className={`btn-comic text-xs px-5 py-2.5 font-black flex items-center gap-2 ${
-            activeMode === 'NOTES' ? 'bg-[#FFD83D] text-black scale-105 shadow-comic-md' : 'btn-comic-white'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>USER NOTES ({notes.length})</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveMode('DASHBOARD'); sound.playPop(); }}
-          className={`btn-comic text-xs px-5 py-2.5 font-black flex items-center gap-2 ${
-            activeMode === 'DASHBOARD' ? 'bg-[#FF5A5F] text-white scale-105 shadow-comic-md' : 'btn-comic-white'
-          }`}
-        >
-          <Trophy className="w-4 h-4" />
-          <span>STUDY DASHBOARD</span>
-        </button>
-      </div>
-
-      {/* THEORY LAB */}
-      {activeMode === 'THEORY' && (
-        <div className="space-y-6">
-
-          {/* Document Upload Toolbar */}
-          <div className="bg-white comic-border-lg p-6 shadow-comic-lg rounded-2xl space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b-2 border-black pb-4">
-              <div>
-                <h2 className="font-black text-2xl uppercase flex items-center gap-2">
-                  <Upload className="w-6 h-6 text-[#B9A7FF]" />
-                  <span>UPLOAD STUDY MATERIAL</span>
-                </h2>
-                <p className="text-xs font-bold text-gray-600">PDF, JPG, PNG, WEBP, or raw text study notes.</p>
-              </div>
-
-              <label className="btn-comic bg-[#B9A7FF] text-black text-xs px-4 py-2.5 font-black cursor-pointer inline-flex items-center gap-2">
-                <Upload className="w-4 h-4" />
-                <span>CHOOSE FILE</span>
-                <input 
-                  type="file" 
-                  accept=".pdf,.jpg,.jpeg,.png,.webp,text/plain" 
-                  onChange={handleFileUpload} 
-                  className="hidden" 
-                />
-              </label>
-            </div>
-
-            {uploadedFile && (
-              <div className="bg-[#FFFDF5] comic-border-sm p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-mono text-xs font-bold">
-                <div>
-                  <div className="text-black font-black text-sm">📄 {uploadedFile.name}</div>
-                  <div className="text-gray-600">
-                    Type: {uploadedFile.type || 'Document'} • Size: {(uploadedFile.size / 1024).toFixed(1)} KB • Pages: {pageCount || 1}
-                  </div>
-                </div>
-                <span className="bg-green-400 text-black px-2.5 py-1 border border-black rounded text-[10px] font-black">
-                  STATUS: READY
-                </span>
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2 pt-2">
-              <button onClick={() => handleAiAction('SUMMARIZE')} disabled={loadingAi} className="btn-comic bg-[#FFD83D] text-black text-xs px-4 py-2 font-black">
-                SUMMARIZE
-              </button>
-              <button onClick={() => handleAiAction('EXPLAIN')} disabled={loadingAi} className="btn-comic bg-[#5DADE2] text-black text-xs px-4 py-2 font-black">
-                EXPLAIN
-              </button>
-              <button onClick={() => handleAiAction('FLASHCARDS')} disabled={loadingAi} className="btn-comic bg-[#B9A7FF] text-black text-xs px-4 py-2 font-black">
-                FLASHCARDS
-              </button>
-              <button onClick={() => handleAiAction('QUIZ')} disabled={loadingAi} className="btn-comic bg-[#FF5A5F] text-white text-xs px-4 py-2 font-black">
-                QUIZ
-              </button>
-              <button onClick={() => handleAiAction('KEY_POINTS')} disabled={loadingAi} className="btn-comic bg-[#2ECC71] text-black text-xs px-4 py-2 font-black">
-                KEY POINTS
-              </button>
-            </div>
-          </div>
-
-          {/* AI Output */}
-          {docSummary && (
-            <div className="bg-[#FFFDF5] comic-border-lg p-6 rounded-2xl space-y-2">
-              <div className="font-black text-sm uppercase flex items-center gap-2 text-[#A855F7]">
-                <Sparkles className="w-5 h-5" />
-                <span>DEION AI STUDY ANALYSIS OUTPUT</span>
-              </div>
-              <div className="text-xs font-mono whitespace-pre-wrap text-black bg-white comic-border-sm p-4 leading-relaxed">
-                {docSummary}
-              </div>
-            </div>
-          )}
-
-          {/* Flashcards Flip Deck */}
-          {flashcards.length > 0 && (
-            <div className="bg-white comic-border-lg p-6 rounded-2xl space-y-4">
-              <div className="flex items-center justify-between border-b-2 border-black pb-2">
-                <h3 className="font-black text-lg uppercase flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-[#B9A7FF]" />
-                  <span>AI FLASHCARDS ({currentCardIdx + 1}/{flashcards.length})</span>
-                </h3>
-              </div>
-
-              <div 
-                onClick={() => setIsCardFlipped(!isCardFlipped)}
-                className="bg-[#B9A7FF]/20 comic-border-md p-10 rounded-2xl cursor-pointer min-h-44 flex flex-col items-center justify-center text-center transition-all hover:scale-[1.01]"
-              >
-                <div className="text-[10px] font-mono font-black uppercase text-purple-800 mb-2">
-                  {isCardFlipped ? 'ANSWER (CLICK TO FLIP)' : 'QUESTION (CLICK TO FLIP)'}
-                </div>
-                <div className="font-black text-lg sm:text-xl text-black">
-                  {isCardFlipped ? flashcards[currentCardIdx].answer : flashcards[currentCardIdx].question}
-                </div>
-              </div>
-
-              <div className="flex justify-between">
-                <button 
-                  onClick={() => { setCurrentCardIdx(Math.max(0, currentCardIdx - 1)); setIsCardFlipped(false); }}
-                  className="btn-comic btn-comic-white px-4 py-2 text-xs font-black"
-                >
-                  PREVIOUS CARD
-                </button>
-                <button 
-                  onClick={() => { setCurrentCardIdx(Math.min(flashcards.length - 1, currentCardIdx + 1)); setIsCardFlipped(false); }}
-                  className="btn-comic bg-[#B9A7FF] text-black px-4 py-2 text-xs font-black"
-                >
-                  NEXT CARD
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* 3-Column Comic Notebook UI */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-3 bg-white comic-border-lg p-5 rounded-2xl space-y-4">
-              <h3 className="font-black text-base uppercase border-b-2 border-black pb-2">CHAPTERS & DECK</h3>
-              <div className="space-y-2 font-bold text-xs">
-                <button className="w-full text-left p-3 bg-[#B9A7FF] comic-border-sm font-black flex items-center justify-between">
-                  <span>CHAPTER 1: FOUNDATIONS</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-                <button className="w-full text-left p-3 bg-white hover:bg-[#FFFDF5] comic-border-sm font-bold flex items-center justify-between">
-                  <span>CHAPTER 2: ADVANCED TOPICS</span>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </button>
-                <button className="w-full text-left p-3 bg-white hover:bg-[#FFFDF5] comic-border-sm font-bold flex items-center justify-between">
-                  <span>CHAPTER 3: REVISION NOTES</span>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </button>
-              </div>
-            </div>
-
-            <div className="lg:col-span-5 bg-white comic-border-lg p-6 rounded-2xl space-y-4">
-              <h3 className="font-black text-xl uppercase border-b-2 border-black pb-2">CHAPTER 1: LESSON CONTENT</h3>
-
-              <div className="space-y-4 text-xs font-bold">
-                <div className="bg-[#5DADE2]/20 border-l-4 border-[#5DADE2] p-4 rounded-r-xl">
-                  <div className="font-black text-sm uppercase text-[#2563EB] mb-1">📘 THEORY</div>
-                  <p className="text-gray-800">
-                    Understanding core data structures and algorithm complexity is essential for writing scalable code.
-                  </p>
-                </div>
-
-                <div className="bg-[#FFD83D]/20 border-l-4 border-[#FFD83D] p-4 rounded-r-xl font-mono">
-                  <div className="font-black text-sm uppercase text-black font-sans mb-1">⚡ EXAMPLE</div>
-                  <code>def binary_search(arr, target): return arr.index(target)</code>
-                </div>
-
-                <div className="bg-[#10B981]/20 border-l-4 border-[#10B981] p-4 rounded-r-xl">
-                  <div className="font-black text-sm uppercase text-emerald-800 mb-1">💡 PRO TIP</div>
-                  <p className="text-gray-800">Break complex problems into smaller helper functions before coding.</p>
-                </div>
-
-                <div className="bg-[#FF5A5F]/20 border-l-4 border-[#FF5A5F] p-4 rounded-r-xl">
-                  <div className="font-black text-sm uppercase text-red-700 mb-1">⚠️ WARNING</div>
-                  <p className="text-gray-800">Watch out for infinite recursion loops without base termination criteria!</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-4 bg-white comic-border-lg p-5 rounded-2xl space-y-4">
-              <div className="flex items-center justify-between border-b-2 border-black pb-2">
-                <h3 className="font-black text-base uppercase flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#A855F7]" />
-                  <span>OPENAI STUDY TUTOR</span>
-                </h3>
-              </div>
-
-              <form onSubmit={askAiTutor} className="space-y-2">
-                <textarea
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder='Ask: "Explain page 2", "Teach me like a beginner", or "What is the main concept?"'
-                  rows={3}
-                  className="comic-input w-full text-xs font-medium"
-                />
-                <button 
-                  type="submit" 
-                  disabled={loadingAi}
-                  className="btn-comic bg-[#A855F7] text-white w-full py-2 text-xs font-black flex items-center justify-center gap-1.5"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>ASK TUTOR</span>
-                </button>
-              </form>
-
-              {aiResponse && (
-                <div className="bg-purple-950 text-purple-100 p-4 comic-border-sm rounded-xl text-xs font-mono space-y-2">
-                  <div className="font-black text-[#B9A7FF]">OPENAI TUTOR RESPONSE:</div>
-                  <p className="whitespace-pre-wrap">{aiResponse}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* USER NOTES */}
-      {activeMode === 'NOTES' && (
-        <div className="space-y-6">
-          <div className="bg-white comic-border-lg p-6 rounded-2xl space-y-4">
-            <h2 className="font-black text-xl uppercase border-b-2 border-black pb-2 flex items-center gap-2">
-              <Plus className="w-5 h-5 text-[#FFD83D]" />
-              <span>CREATE NEW STUDY NOTE</span>
-            </h2>
-
-            <form onSubmit={handleSaveNote} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  value={noteTitle}
-                  onChange={(e) => setNoteTitle(e.target.value)}
-                  placeholder="Note Title..."
-                  className="comic-input text-xs font-bold sm:col-span-2"
-                />
-                <select
-                  value={noteTag}
-                  onChange={(e) => setNoteTag(e.target.value)}
-                  className="comic-input text-xs font-black"
-                >
-                  <option value="Python">Python</option>
-                  <option value="SQL">SQL</option>
-                  <option value="AI">AI</option>
-                  <option value="Data Analytics">Data Analytics</option>
-                  <option value="Web Development">Web Development</option>
-                  <option value="Interview">Interview</option>
-                </select>
-              </div>
-
-              <textarea
-                value={noteContent}
-                onChange={(e) => setNoteContent(e.target.value)}
-                placeholder="Write study concepts, code snippets, key takeaways..."
-                rows={5}
-                className="comic-input w-full text-xs font-mono"
-              />
-
-              <button type="submit" className="btn-comic bg-[#FFD83D] text-black px-6 py-2.5 text-xs font-black flex items-center gap-1.5">
-                <Plus className="w-4 h-4" />
-                <span>SAVE NOTE</span>
-              </button>
-            </form>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="relative w-full sm:w-72">
-              <input
-                type="text"
-                value={noteSearch}
-                onChange={(e) => setNoteSearch(e.target.value)}
-                placeholder="Search notes..."
-                className="comic-input w-full text-xs pl-8 font-bold"
-              />
-              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => { setSelectedTag(tag); sound.playPop(); }}
-                  className={`btn-comic text-[11px] px-3 py-1 font-black ${
-                    selectedTag === tag ? 'bg-black text-white' : 'btn-comic-white'
-                  }`}
-                >
-                  {tag}
-                </button>
+        {/* Upload Dropzone / Doc Switcher */}
+        <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
+          {documents.length > 0 && (
+            <select
+              value={activeDoc?.id || ''}
+              onChange={(e) => {
+                const doc = documents.find(d => d.id === e.target.value);
+                if (doc) {
+                  setActiveDoc(doc);
+                  setSelectedChapterId('ALL');
+                  fetchDocumentDetails(doc.id);
+                }
+              }}
+              className="bg-white comic-border-sm px-3 py-2 text-xs font-black uppercase rounded shadow-comic-sm focus:outline-none"
+            >
+              {documents.map(d => (
+                <option key={d.id} value={d.id}>📄 {d.title}</option>
               ))}
-            </div>
+            </select>
+          )}
+
+          <label className="bg-black hover:bg-[#FF5A5F] text-[#FFD83D] hover:text-white comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-comic-sm transition-all shrink-0">
+            <Upload className="w-4 h-4" />
+            <span>{isUploading ? uploadStatus : 'UPLOAD PDF'}</span>
+            <input 
+              type="file" 
+              accept=".pdf,application/pdf" 
+              onChange={handleFileUpload} 
+              disabled={isUploading}
+              className="hidden" 
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Main Study Workspace (2 Columns) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        {/* LEFT CHAPTER NAVIGATION PANEL (Desktop + Mobile Drawer) */}
+        <div className="lg:col-span-4 space-y-4">
+
+          {/* Mobile Drawer Toggle */}
+          <div className="lg:hidden flex items-center justify-between bg-white comic-border-md p-3">
+            <span className="font-black text-xs uppercase flex items-center gap-2">
+              <Layers className="w-4 h-4 text-black" />
+              <span>SELECTED: {selectedChapterName}</span>
+            </span>
+            <button 
+              onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+              className="bg-[#FFD83D] comic-border-sm p-1.5 font-black text-xs"
+            >
+              {mobileDrawerOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredNotes.length === 0 ? (
-              <div className="col-span-full bg-white comic-border-md p-12 text-center font-black space-y-2">
-                <FileText className="w-10 h-10 mx-auto text-gray-400" />
-                <div>NO STUDY NOTES FOUND</div>
-                <p className="text-xs text-gray-600 font-mono">Create your first study note above!</p>
+          <div className={`bg-white comic-border-lg shadow-comic-lg p-4 space-y-3 ${mobileDrawerOpen ? 'block' : 'hidden lg:block'}`}>
+            <div className="flex items-center justify-between pb-2 border-b-2 border-black">
+              <h3 className="font-black text-sm uppercase flex items-center gap-1.5">
+                <BookOpen className="w-4 h-4" />
+                <span>CHAPTER NAVIGATION</span>
+              </h3>
+              <span className="text-[10px] font-mono font-bold bg-[#FFD83D] px-2 py-0.5 border border-black rounded">
+                {activeDoc?.chapters.length || 0} SECTIONS
+              </span>
+            </div>
+
+            {/* ALL CHAPTERS BUTTON */}
+            <button
+              onClick={() => handleSelectChapter('ALL')}
+              className={`w-full text-left p-3 border-2 font-black text-xs uppercase transition-all flex items-center justify-between ${
+                selectedChapterId === 'ALL'
+                  ? 'bg-[#FF5A5F] text-white border-black shadow-comic-sm translate-x-1'
+                  : 'bg-[#FFFDF5] hover:bg-[#FFD83D] border-black text-black'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span>⚡</span>
+                <span>ALL CHAPTERS (FULL PDF)</span>
               </div>
-            ) : (
-              filteredNotes.map((n) => (
-                <div key={n.id} className="bg-white comic-border-md p-5 rounded-xl space-y-3 flex flex-col justify-between shadow-comic-sm">
-                  <div className="space-y-2">
+              <span className="text-[10px] font-mono bg-black text-white px-1.5 py-0.5 rounded">FULL</span>
+            </button>
+
+            {/* CHAPTER LIST */}
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+              {activeDoc?.chapters.map((ch) => {
+                const isSelected = selectedChapterId === ch.id;
+                return (
+                  <button
+                    key={ch.id}
+                    onClick={() => handleSelectChapter(ch.id)}
+                    className={`w-full text-left p-2.5 border-2 transition-all flex flex-col gap-1 ${
+                      isSelected
+                        ? 'bg-[#FFD83D] border-black shadow-comic-sm font-black translate-x-1'
+                        : 'bg-white hover:bg-yellow-50 border-gray-300 text-black'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="comic-sticker bg-[#FFD83D] text-black text-[10px] font-black border border-black">
-                        {n.subject}
+                      <span className="font-black text-xs uppercase line-clamp-1">
+                        {ch.title}
                       </span>
-                      <button onClick={() => handleDeleteNote(n.id)} className="text-gray-400 hover:text-red-600">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {isSelected && <ChevronRight className="w-4 h-4 shrink-0" />}
                     </div>
 
-                    <h4 className="font-black text-base uppercase text-black">{n.title}</h4>
+                    <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-gray-600">
+                      <span className={ch.summaryJson ? 'text-green-600 font-extrabold' : ''}>
+                        {ch.summaryJson ? '✓ Summary' : '○ Summary'}
+                      </span>
+                      <span>•</span>
+                      <span className={ch.explanationText ? 'text-green-600 font-extrabold' : ''}>
+                        {ch.explanationText ? '✓ Explain' : '○ Explain'}
+                      </span>
+                      <span>•</span>
+                      <span className={ch.keyPointsJson ? 'text-green-600 font-extrabold' : ''}>
+                        {ch.keyPointsJson ? '✓ Key Points' : '○ Key Points'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-                    <p className="text-xs font-mono bg-[#FFFDF5] comic-border-sm p-3 text-gray-800 break-words leading-relaxed">
-                      {n.content}
-                    </p>
-                  </div>
+          {/* AI TUTOR QUICK QUESTION BOX */}
+          <div className="bg-[#B9A7FF] comic-border-lg shadow-comic-lg p-4 space-y-3">
+            <h4 className="font-black text-xs uppercase flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-black" />
+              <span>DEION AI TUTOR</span>
+            </h4>
+            <form onSubmit={handleAskTutor} className="space-y-2">
+              <input
+                type="text"
+                value={tutorQuery}
+                onChange={(e) => setTutorQuery(e.target.value)}
+                placeholder={`Ask about ${selectedChapterName}...`}
+                className="w-full bg-white comic-border-sm p-2 text-xs font-mono font-bold focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={loadingTutor}
+                className="w-full bg-black text-white hover:bg-gray-800 comic-border-sm p-1.5 font-black text-xs uppercase tracking-wider transition-colors"
+              >
+                {loadingTutor ? 'AI THINKING...' : 'ASK TUTOR'}
+              </button>
+            </form>
 
-                  <div className="text-[10px] font-mono text-gray-500 text-right">
-                    Updated: {new Date(n.updatedAt).toLocaleDateString()}
-                  </div>
-                </div>
-              ))
+            {tutorAnswer && (
+              <div className="bg-white comic-border-sm p-3 font-mono text-xs text-gray-900 max-h-48 overflow-y-auto space-y-1">
+                <div className="font-black text-[10px] text-purple-700 uppercase">⚡ TUTOR RESPONSE:</div>
+                <p className="whitespace-pre-line leading-relaxed">{tutorAnswer}</p>
+              </div>
             )}
           </div>
+
         </div>
-      )}
 
-      {/* DASHBOARD */}
-      {activeMode === 'DASHBOARD' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-[#FFD83D] comic-border-lg p-6 rounded-2xl shadow-comic-md space-y-3 font-mono">
-              <div className="text-xs font-sans font-black uppercase text-black">STUDY LEVEL & XP</div>
-              <div className="text-4xl font-black text-black">LEVEL {userState?.level || 1}</div>
-              <div className="text-xs font-black text-black/80">{userState?.xp || 0} XP Earned</div>
-            </div>
+        {/* RIGHT MAIN STUDY WORKSPACE */}
+        <div className="lg:col-span-8 space-y-4">
 
-            <div className="bg-[#5DADE2] text-black comic-border-lg p-6 rounded-2xl shadow-comic-md space-y-3 font-mono">
-              <div className="text-xs font-sans font-black uppercase">STUDY STREAK</div>
-              <div className="text-4xl font-black flex items-center gap-2">
-                <Flame className="w-8 h-8 text-[#FF5A5F]" />
-                <span>{userState?.streak || 1} DAYS</span>
-              </div>
-              <div className="text-xs font-black opacity-90">Daily active recall practice</div>
-            </div>
+          {/* 5 MODE SELECTION TABS */}
+          <div className="grid grid-cols-5 gap-1 sm:gap-2">
+            {(['SUMMARIZE', 'EXPLAIN', 'FLASHCARDS', 'QUIZ', 'KEY_POINTS'] as ModeType[]).map((mode) => {
+              const isActive = activeMode === mode;
+              const labels: Record<ModeType, string> = {
+                SUMMARIZE: 'SUMMARY',
+                EXPLAIN: 'EXPLAIN',
+                FLASHCARDS: 'CARDS',
+                QUIZ: 'QUIZ',
+                KEY_POINTS: 'KEY POINTS',
+              };
 
-            <div className="bg-[#B9A7FF] text-black comic-border-lg p-6 rounded-2xl shadow-comic-md space-y-3 font-mono">
-              <div className="text-xs font-sans font-black uppercase">SAVED STUDY NOTES</div>
-              <div className="text-4xl font-black">{notes.length} NOTES</div>
-              <div className="text-xs font-black opacity-90">Across all tagged subjects</div>
-            </div>
+              return (
+                <button
+                  key={mode}
+                  onClick={() => handleChangeMode(mode)}
+                  className={`py-2.5 px-1 sm:px-3 border-2 font-black text-[10px] sm:text-xs uppercase tracking-tight transition-all text-center rounded-t-lg ${
+                    isActive
+                      ? 'bg-[#FFD83D] border-black shadow-comic-sm font-black translate-y-[-2px]'
+                      : 'bg-white hover:bg-yellow-100 border-gray-400 text-black'
+                  }`}
+                >
+                  {labels[mode]}
+                </button>
+              );
+            })}
           </div>
+
+          {/* MAIN VIEWPORT CONTAINER */}
+          <div className="bg-white comic-border-lg shadow-comic-lg p-6 min-h-[500px] relative">
+
+            {/* Loading Overlay */}
+            {isLoadingMode && (
+              <div className="absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                <div className="w-10 h-10 border-4 border-black border-t-[#FF5A5F] rounded-full animate-spin" />
+                <div className="comic-badge comic-badge-yellow font-black text-xs animate-bounce">
+                  PROCESSING {activeMode} FOR {selectedChapterName}...
+                </div>
+                <p className="font-mono text-xs text-gray-700">
+                  Synthesizing PDF content through Ollama → Gemini → Groq fallback pipeline...
+                </p>
+              </div>
+            )}
+
+            {/* MODE 1: SUMMARIZE */}
+            {activeMode === 'SUMMARIZE' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                  <div>
+                    <h2 className="font-black text-xl uppercase">STUDY SUMMARY</h2>
+                    <span className="font-mono text-xs font-bold text-gray-700">
+                      Scope: {selectedChapterName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(summaryText)}
+                      className="bg-gray-100 hover:bg-gray-200 comic-border-sm p-1.5 text-xs font-black flex items-center gap-1"
+                      title="Copy Summary"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">COPY</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="prose max-w-none font-sans text-sm text-gray-900 leading-relaxed whitespace-pre-line space-y-3">
+                  {summaryText || 'Click generate to load chapter summary.'}
+                </div>
+              </div>
+            )}
+
+            {/* MODE 2: EXPLAIN */}
+            {activeMode === 'EXPLAIN' && (
+              <div className="space-y-4">
+                <div className="pb-3 border-b-2 border-black">
+                  <h2 className="font-black text-xl uppercase">TEACHER-STYLE BREAKDOWN</h2>
+                  <span className="font-mono text-xs font-bold text-gray-700">
+                    Simplified concepts & step-by-step explanations for {selectedChapterName}
+                  </span>
+                </div>
+
+                <div className="bg-[#FFFDF5] comic-border-sm p-4 font-sans text-sm text-gray-900 leading-relaxed whitespace-pre-line space-y-4">
+                  {explanationText || 'Click generate to load teacher explanation.'}
+                </div>
+              </div>
+            )}
+
+            {/* MODE 3: FLASHCARDS */}
+            {activeMode === 'FLASHCARDS' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                  <div>
+                    <h2 className="font-black text-xl uppercase">STUDY FLASHCARDS</h2>
+                    <span className="font-mono text-xs font-bold text-gray-700">
+                      {flashcards.length} Cards Generated • {flashcards.filter(c => c.mastered).length} Mastered
+                    </span>
+                  </div>
+                </div>
+
+                {flashcards.length > 0 ? (
+                  <div className="max-w-md mx-auto space-y-4">
+                    {/* 3D FLIP CARD */}
+                    <div 
+                      onClick={() => setIsCardFlipped(!isCardFlipped)}
+                      className={`min-h-[220px] p-6 comic-border-lg cursor-pointer transition-all transform flex flex-col justify-between select-none ${
+                        isCardFlipped 
+                          ? 'bg-[#B9A7FF] text-black shadow-comic-lg' 
+                          : 'bg-[#FFD83D] text-black shadow-comic-lg'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs font-mono font-bold">
+                        <span className="bg-black text-white px-2 py-0.5 rounded uppercase">
+                          CARD {currentCardIdx + 1} OF {flashcards.length}
+                        </span>
+                        <span className="bg-white text-black px-2 py-0.5 comic-border-sm uppercase">
+                          {isCardFlipped ? 'BACK (ANSWER)' : 'FRONT (QUESTION)'}
+                        </span>
+                      </div>
+
+                      <div className="my-auto text-center py-4">
+                        <h3 className="font-black text-lg sm:text-xl uppercase leading-snug">
+                          {isCardFlipped ? flashcards[currentCardIdx].answer : flashcards[currentCardIdx].question}
+                        </h3>
+                        <p className="text-[10px] font-mono font-bold text-gray-700 mt-2">
+                          (TAP CARD TO FLIP)
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="bg-white text-black px-2 py-0.5 rounded border border-black uppercase text-[10px]">
+                          TYPE: {flashcards[currentCardIdx].cardType}
+                        </span>
+                        {flashcards[currentCardIdx].mastered && (
+                          <span className="bg-green-500 text-white px-2 py-0.5 rounded text-[10px] font-black">
+                            ✓ MASTERED
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* CARD NAVIGATION & MASTERY CONTROLS */}
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => {
+                          if (currentCardIdx > 0) {
+                            setCurrentCardIdx(prev => prev - 1);
+                            setIsCardFlipped(false);
+                            sound.playPop();
+                          }
+                        }}
+                        disabled={currentCardIdx === 0}
+                        className="bg-white hover:bg-gray-100 disabled:opacity-40 comic-border-sm px-3 py-2 text-xs font-black uppercase"
+                      >
+                        PREV
+                      </button>
+
+                      <button
+                        onClick={() => handleToggleCardMastery(
+                          flashcards[currentCardIdx].id, 
+                          flashcards[currentCardIdx].mastered
+                        )}
+                        className={`comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider transition-colors ${
+                          flashcards[currentCardIdx].mastered
+                            ? 'bg-green-500 text-white'
+                            : 'bg-[#FF5A5F] text-white hover:bg-red-600'
+                        }`}
+                      >
+                        {flashcards[currentCardIdx].mastered ? '✓ MASTERED' : 'MARK MASTERED'}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (currentCardIdx < flashcards.length - 1) {
+                            setCurrentCardIdx(prev => prev + 1);
+                            setIsCardFlipped(false);
+                            sound.playPop();
+                          }
+                        }}
+                        disabled={currentCardIdx === flashcards.length - 1}
+                        className="bg-white hover:bg-gray-100 disabled:opacity-40 comic-border-sm px-3 py-2 text-xs font-black uppercase"
+                      >
+                        NEXT
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="font-mono text-xs text-gray-700">No flashcards available yet.</p>
+                )}
+              </div>
+            )}
+
+            {/* MODE 4: QUIZ */}
+            {activeMode === 'QUIZ' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between pb-3 border-b-2 border-black">
+                  <div>
+                    <h2 className="font-black text-xl uppercase">INTERACTIVE CHAPTER QUIZ</h2>
+                    <span className="font-mono text-xs font-bold text-gray-700">
+                      Score: {quizScore.correct} / {quizQuestions.length} Correct
+                    </span>
+                  </div>
+                </div>
+
+                {!quizComplete && quizQuestions.length > 0 ? (
+                  <div className="space-y-5 max-w-2xl mx-auto">
+                    {/* QUESTION TITLE */}
+                    <div className="bg-[#FFFDF5] comic-border-md p-4 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-mono font-bold">
+                        <span className="bg-black text-[#FFD83D] px-2 py-0.5 rounded uppercase">
+                          QUESTION {currentQuizIdx + 1} OF {quizQuestions.length}
+                        </span>
+                        <span className="bg-purple-100 text-purple-900 border border-purple-300 px-2 py-0.5 rounded font-black">
+                          {quizQuestions[currentQuizIdx].topic}
+                        </span>
+                      </div>
+                      <h3 className="font-black text-base sm:text-lg uppercase text-black">
+                        {quizQuestions[currentQuizIdx].question}
+                      </h3>
+                    </div>
+
+                    {/* OPTIONS (A, B, C, D) */}
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {quizQuestions[currentQuizIdx].options.map((opt, oIdx) => {
+                        const isSelected = selectedQuizOption === oIdx;
+                        const isCorrectOption = oIdx === quizQuestions[currentQuizIdx].correctAnswer;
+
+                        let btnStyle = 'bg-white hover:bg-yellow-50 border-black text-black';
+                        if (quizSubmitted) {
+                          if (isCorrectOption) {
+                            btnStyle = 'bg-green-500 text-white border-black font-black shadow-comic-sm';
+                          } else if (isSelected && !isCorrectOption) {
+                            btnStyle = 'bg-red-500 text-white border-black font-black shadow-comic-sm';
+                          } else {
+                            btnStyle = 'bg-gray-100 border-gray-300 text-gray-400 opacity-60';
+                          }
+                        }
+
+                        return (
+                          <button
+                            key={oIdx}
+                            onClick={() => handleAnswerQuiz(oIdx)}
+                            disabled={quizSubmitted}
+                            className={`w-full text-left p-3.5 border-2 text-xs font-bold transition-all flex items-center justify-between ${btnStyle}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="w-6 h-6 rounded-full border border-black bg-black text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                                {String.fromCharCode(65 + oIdx)}
+                              </span>
+                              <span>{opt}</span>
+                            </div>
+
+                            {quizSubmitted && isCorrectOption && <CheckCircle2 className="w-5 h-5 text-white shrink-0" />}
+                            {quizSubmitted && isSelected && !isCorrectOption && <XCircle className="w-5 h-5 text-white shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* EXPLANATION FEEDBACK BOX */}
+                    {quizSubmitted && (
+                      <div className="bg-[#FFD83D] comic-border-md p-4 space-y-2">
+                        <div className="font-black text-xs uppercase flex items-center gap-1.5">
+                          <Lightbulb className="w-4 h-4 text-black" />
+                          <span>EXPLANATION:</span>
+                        </div>
+                        <p className="font-sans text-xs text-gray-900 leading-relaxed font-bold">
+                          {quizQuestions[currentQuizIdx].explanation}
+                        </p>
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            onClick={handleNextQuizQuestion}
+                            className="bg-black hover:bg-gray-800 text-white comic-border-sm px-4 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1"
+                          >
+                            <span>{currentQuizIdx < quizQuestions.length - 1 ? 'NEXT QUESTION' : 'VIEW RESULTS'}</span>
+                            <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : quizComplete ? (
+                  /* CHAPTER QUIZ COMPLETE SUMMARY CARD */
+                  <div className="bg-[#B9A7FF] comic-border-lg shadow-comic-lg p-8 text-center space-y-4 max-w-md mx-auto">
+                    <div className="comic-badge comic-badge-yellow text-xs font-black animate-bounce mx-auto">
+                      CHAPTER QUIZ COMPLETE!
+                    </div>
+                    <h2 className="font-black text-3xl uppercase">ACCURACY: {Math.round((quizScore.correct / Math.max(1, quizQuestions.length)) * 100)}%</h2>
+                    <p className="font-mono text-xs font-bold text-gray-800">
+                      Answered {quizScore.correct} of {quizQuestions.length} questions correctly.
+                    </p>
+                    <div className="pt-4 flex items-center justify-center gap-3">
+                      <button
+                        onClick={() => {
+                          setCurrentQuizIdx(0);
+                          setSelectedQuizOption(null);
+                          setQuizSubmitted(false);
+                          setQuizComplete(false);
+                        }}
+                        className="bg-black text-white comic-border-sm px-4 py-2 text-xs font-black uppercase"
+                      >
+                        RETAKE QUIZ
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="font-mono text-xs text-gray-700">No quiz questions generated yet.</p>
+                )}
+              </div>
+            )}
+
+            {/* MODE 5: KEY POINTS */}
+            {activeMode === 'KEY_POINTS' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b-2 border-black">
+                  <div>
+                    <h2 className="font-black text-xl uppercase">EXAM REVISION KEY POINTS</h2>
+                    <span className="font-mono text-xs font-bold text-gray-700">
+                      Essential formulas, concepts & definitions
+                    </span>
+                  </div>
+
+                  {/* Filter Tags */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {['ALL', 'IMPORTANT', 'DEFINITION', 'FORMULA', 'CONCEPT'].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setKeyPointFilter(cat)}
+                        className={`px-2 py-0.5 text-[10px] font-black border transition-all ${
+                          keyPointFilter === cat
+                            ? 'bg-black text-white border-black font-mono'
+                            : 'bg-gray-100 text-gray-800 border-gray-300'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  {keyPoints
+                    .filter(kp => keyPointFilter === 'ALL' || kp.category === keyPointFilter)
+                    .map((kp, idx) => (
+                      <div 
+                        key={idx}
+                        className="bg-[#FFFDF5] comic-border-sm p-3 flex items-start gap-3 border-2 border-black"
+                      >
+                        <span className="bg-[#FFD83D] text-black font-black text-[10px] px-2 py-0.5 border border-black uppercase shrink-0 mt-0.5">
+                          {kp.category}
+                        </span>
+                        <p className="font-sans text-xs font-bold text-gray-900 leading-relaxed">
+                          {kp.point}
+                        </p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+
         </div>
-      )}
+
+      </div>
 
     </div>
   );
 }
 
-export default function StudyLabPage() {
+export default function StudyPage() {
   return (
-    <Suspense fallback={<div className="p-12 text-center font-black">⚡ LOADING THE STUDY LAB...</div>}>
-      <StudyLabContent />
+    <Suspense fallback={<div className="p-8 text-center font-mono font-bold">Loading Study Platform...</div>}>
+      <StudyPlatformContent />
     </Suspense>
   );
 }
