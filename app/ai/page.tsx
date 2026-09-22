@@ -59,6 +59,7 @@ export default function AiPage() {
   ]);
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
+  const [userName, setUserName] = useState<string>('');
 
   // Health Status Panel State
   const [showStatusPanel, setShowStatusPanel] = useState(true);
@@ -90,6 +91,15 @@ export default function AiPage() {
 
   useEffect(() => {
     fetchHealth();
+
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.authenticated && data.user?.name) {
+          setUserName(data.user.name);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleTestProvider = async (provider: 'ollama' | 'gemini' | 'groq') => {
@@ -208,7 +218,11 @@ export default function AiPage() {
         </div>
 
         <h1 className="font-black text-4xl sm:text-6xl uppercase tracking-tight">
-          THE INTELLIGENCE
+          {userName ? (
+            userName.trim().split(' ')[0].toUpperCase().endsWith('S')
+              ? `${userName.trim().split(' ')[0].toUpperCase()}' INTELLIGENCE`
+              : `${userName.trim().split(' ')[0].toUpperCase()}'S INTELLIGENCE`
+          ) : 'THE INTELLIGENCE'}
         </h1>
 
         {/* Speech Bubble Header */}
