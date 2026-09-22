@@ -42,7 +42,6 @@ const NAV_ITEMS = [
 
 export function Navbar({ onOpenCommand }: NavbarProps) {
   const pathname = usePathname();
-  const isHome = pathname === '/';
   const [authUser, setAuthUser] = useState<{ name: string; email: string; level: number; xp: number } | null>(null);
   const [currentTime, setCurrentTime] = useState('');
   const [shortcutText, setShortcutText] = useState('Ctrl K');
@@ -71,11 +70,16 @@ export function Navbar({ onOpenCommand }: NavbarProps) {
     return () => clearInterval(interval);
   }, [pathname]);
 
+  const firstName = authUser?.name ? authUser.name.trim().split(' ')[0] : '';
+  const displayTitle = firstName
+    ? (firstName.toUpperCase().endsWith('S') ? `${firstName.toUpperCase()}' HUB` : `${firstName.toUpperCase()}'S HUB`)
+    : 'PERSONAL HUB';
+
   return (
     <>
       {/* Top macOS-Style Application Window Bar */}
       <div className="bg-[#FFD83D] comic-border-b-lg border-b-3 border-black py-1.5 px-4 flex items-center justify-between text-xs font-mono font-bold w-full text-black">
-        {/* Left: Window Control Dots & Menu Items */}
+        {/* Left: Window Control Dots & Brand */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full bg-[#FF5A5F] comic-border-sm inline-block" />
@@ -84,16 +88,6 @@ export function Navbar({ onOpenCommand }: NavbarProps) {
           </div>
 
           <span className="font-sans font-black tracking-wider text-xs uppercase">PERSONAL HUB OS</span>
-
-          <div className="hidden md:flex items-center gap-3 text-black text-[11px] font-extrabold">
-            <Link href="/" className="hover:underline">File</Link>
-            <Link href="/tools" className="hover:underline">Tools</Link>
-            <Link href="/study" className="hover:underline">Study</Link>
-            <Link href="/coding" className="hover:underline">Code Arena</Link>
-            <Link href="/ai" className="hover:underline">AI</Link>
-            <Link href="/career" className="hover:underline">Career</Link>
-            <Link href="/privacy" className="hover:underline">Help</Link>
-          </div>
         </div>
 
         {/* Right: Status Indicators */}
@@ -114,55 +108,23 @@ export function Navbar({ onOpenCommand }: NavbarProps) {
         </div>
       </div>
 
-      {/* Floating Main Navbar (FULLY YELLOW) */}
+      {/* Floating Main Navbar (YELLOW & NEO-BRUTALIST) */}
       <header className="sticky top-2 z-40 w-full px-4 md:px-8 my-3">
         <div className="bg-[#FFD83D] comic-border-lg shadow-comic-lg p-2.5 sm:p-3 flex items-center justify-between gap-3 w-full border-3 border-black relative">
           
-          {/* Left Branding for non-home pages */}
-          {!isHome && (
-            <Link href="/" className="flex items-center gap-2 group shrink-0">
-              <div className="bg-black text-[#FFD83D] comic-border-sm px-3.5 py-1.5 font-black tracking-wider text-lg sm:text-2xl group-hover:bg-[#FF5A5F] group-hover:text-white transition-colors flex items-center gap-1.5">
-                <span>⚡</span>
-                <span>PERSONAL HUB</span>
-              </div>
-            </Link>
-          )}
-
-          {/* Center BIG Headline: WELCOME TO THE HUB (FULL YELLOW) */}
-          {isHome ? (
-            <div className="flex-1 flex justify-center">
-              <Link href="/" className="group">
-                <div className="bg-[#FFD83D] text-black comic-border-md px-6 sm:px-10 py-2.5 font-black text-2xl sm:text-4xl lg:text-5xl tracking-tight uppercase shadow-comic-md group-hover:bg-[#FF5A5F] group-hover:text-white transition-all transform hover:scale-105 flex items-center gap-2">
-                  <span>⚡</span>
-                  <span>WELCOME TO THE HUB</span>
-                </div>
-              </Link>
+          {/* Left Side: Authenticated User's Dynamic Name (e.g., DEION'S HUB) */}
+          <Link href="/" className="flex items-center gap-2 group shrink-0">
+            <div className="bg-black text-[#FFD83D] comic-border-sm px-3.5 py-1.5 font-black tracking-wider text-base sm:text-xl group-hover:bg-[#FF5A5F] group-hover:text-white transition-colors flex items-center gap-1.5">
+              <span>⚡</span>
+              <span>{displayTitle}</span>
             </div>
-          ) : (
-            <nav className="hidden xl:flex items-center gap-1 mx-auto">
-              {NAV_ITEMS.map((item) => {
-                const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`relative px-2 py-1 font-extrabold text-xs tracking-wider flex items-center gap-1 border-2 transition-all ${
-                      isActive
-                        ? 'bg-black text-[#FFD83D] border-[#050505] shadow-comic-sm font-black translate-y-[-1px]'
-                        : 'border-transparent text-black hover:border-[#050505] hover:bg-[#FFFDF5]'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          )}
+          </Link>
 
-          {/* Top-Right Side Corner: FIND (SEARCH) & PROFILE (FULLY YELLOW) */}
-          <div className="flex items-center gap-2 sm:gap-3 ml-auto shrink-0">
+          {/* Center: Completely Empty */}
+          <div className="flex-1" />
+
+          {/* Top-Right: Search & Profile Controls */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               onClick={onOpenCommand}
               className="bg-[#FFD83D] hover:bg-white text-black border-2 border-black shadow-comic-sm hover:-translate-y-0.5 active:translate-y-0.5 transition-all px-3 sm:px-4 py-1.5 font-black text-xs sm:text-sm flex items-center gap-1.5 rounded-xl"
@@ -175,23 +137,18 @@ export function Navbar({ onOpenCommand }: NavbarProps) {
               </span>
             </button>
 
-            {authUser ? (
-              <Link
-                href="/profile"
-                className="bg-[#FFD83D] hover:bg-white text-black border-2 border-black shadow-comic-sm hover:-translate-y-0.5 active:translate-y-0.5 transition-all px-3 sm:px-4 py-1.5 font-black text-xs sm:text-sm flex items-center gap-1.5 rounded-xl"
-              >
-                <User className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.8]" />
-                <span className="hidden sm:inline">{authUser.name.split(' ')[0].toUpperCase()}</span>
-              </Link>
-            ) : (
-              <Link
-                href="/profile"
-                className="bg-[#FFD83D] hover:bg-white text-black border-2 border-black shadow-comic-sm hover:-translate-y-0.5 active:translate-y-0.5 transition-all px-3 sm:px-4 py-1.5 font-black text-xs sm:text-sm flex items-center gap-1.5 rounded-xl"
-              >
-                <User className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.8]" />
-                <span>PROFILE</span>
-              </Link>
-            )}
+            <Link
+              href="/profile"
+              className="bg-[#FFD83D] hover:bg-white text-black border-2 border-black shadow-comic-sm hover:-translate-y-0.5 active:translate-y-0.5 transition-all px-3 sm:px-4 py-1.5 font-black text-xs sm:text-sm flex items-center gap-1.5 rounded-full sm:rounded-xl"
+              title="Profile"
+            >
+              <div className="w-6 h-6 rounded-full bg-black text-[#FFD83D] font-black text-xs flex items-center justify-center shrink-0">
+                <User className="w-3.5 h-3.5 stroke-[2.8]" />
+              </div>
+              <span className="hidden sm:inline font-black">
+                {firstName ? firstName.toUpperCase() : 'PROFILE'}
+              </span>
+            </Link>
           </div>
 
         </div>

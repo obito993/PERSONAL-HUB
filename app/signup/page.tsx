@@ -46,9 +46,8 @@ export default function SignupPage() {
       setRegistered(true);
       sound.playLevelUp();
       setTimeout(() => {
-        router.push('/');
-        router.refresh();
-      }, 1200);
+        window.location.href = '/';
+      }, 600);
     } catch {
       setError('Network error. Please try again.');
       setLoading(false);
