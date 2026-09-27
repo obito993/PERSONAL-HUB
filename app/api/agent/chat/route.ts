@@ -3,7 +3,10 @@ import { getAuthSession } from '@/lib/auth';
 import { PrismaClient } from '@prisma/client';
 import { AgentEngine } from '@/lib/agent/agent-engine';
 
+export const maxDuration = 60;
+
 const prisma = new PrismaClient();
+
 
 export async function POST(req: NextRequest) {
   try {

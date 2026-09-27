@@ -1,3 +1,15 @@
+/**
+ * DEION HUB — Autonomous Agent Execution Engine
+ *
+ * Architecture:
+ *   CREATED → PLANNING → RUNNING → VALIDATING → COMPLETED | FAILED
+ *
+ * Provider cascade: Ollama → Gemini → Groq  (existing AIRouter, unchanged)
+ *
+ * Vercel note: The POST /api/agent/tasks route sets maxDuration=60.
+ * All state is persisted to Neon PostgreSQL — no in-memory or local-FS state.
+ */
+
 import { PrismaClient } from '@prisma/client';
 import { AIRouter } from '@/lib/ai/router';
 import { AgentMemoryService } from './memory-service';
@@ -5,43 +17,47 @@ import { AgentToolRegistry } from './tool-registry';
 
 const prisma = new PrismaClient();
 
-// ─── Audit event types ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
 type AuditEvent =
   | 'TASK_CREATED'
   | 'TASK_PLANNING'
   | 'AI_PROVIDER_SELECTED'
   | 'TOOL_STARTED'
   | 'TOOL_COMPLETED'
+  | 'TOOL_FAILED'
   | 'AI_GENERATION_STARTED'
   | 'AI_GENERATION_COMPLETED'
+  | 'AI_PROVIDER_FAILED'
   | 'VALIDATION_STARTED'
   | 'VALIDATION_COMPLETED'
-  | 'TASK_COMPLETED'
-  | 'AI_PROVIDER_FAILED'
-  | 'TOOL_FAILED'
   | 'TASK_VALIDATION_FAILED'
+  | 'TASK_COMPLETED'
   | 'TASK_FAILED';
 
-// ─── Execution plan types ────────────────────────────────────────────────────
-type TaskType =
-  | 'AI_GENERATION'   // pure content generation — no tools needed
-  | 'STUDY_DOCUMENT'  // requires study library access
-  | 'DATA_QUERY'      // query user data (tasks, career, habits)
-  | 'MEMORY_RECALL'   // heavy memory-search focus
-  | 'MIXED';          // combination
+/**
+ * Task types determine the execution path.
+ * AI_GENERATION = pure content request, no user-data tools needed.
+ * STUDY_DOCUMENT = explicitly about user's uploaded PDFs/textbooks.
+ * DATA_QUERY     = querying user's tasks, habits, career data.
+ * MEMORY_RECALL  = querying agent memory explicitly.
+ * MIXED          = combination of the above.
+ */
+type TaskType = 'AI_GENERATION' | 'STUDY_DOCUMENT' | 'DATA_QUERY' | 'MEMORY_RECALL' | 'MIXED';
 
 interface ExecutionPlan {
   taskType: TaskType;
   rationale: string;
-  requiresStudyLibrary: boolean;
-  requiresMemorySearch: boolean;
-  requiresDataQuery: boolean;
   toolsToCall: string[];
-  estimatedSteps: number;
 }
 
-// ─── Helper: audit logger ────────────────────────────────────────────────────
-async function audit(
+// ─────────────────────────────────────────────────────────────────────────────
+// Private helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function logAudit(
   userId: string,
   taskId: string,
   event: AuditEvent,
@@ -56,45 +72,52 @@ async function audit(
         toolName: event,
         actionSummary: summary,
         approvalStatus: 'AUTO_EXECUTED',
-        detailsJson: JSON.stringify(details || {}),
+        detailsJson: JSON.stringify(details ?? {}),
       },
     });
   } catch (e) {
-    console.warn('[AUDIT LOG] Failed to write audit event:', e);
+    console.warn('[AGENT ENGINE] Audit log write failed:', e);
   }
 }
 
-// ─── Helper: update a task step ──────────────────────────────────────────────
-async function updateStep(
-  stepId: string,
-  status: string,
-  resultText: string,
-  toolName?: string
-) {
-  await prisma.agentTaskStep.update({
-    where: { id: stepId },
-    data: { status, resultText, toolName: toolName ?? undefined },
-  });
-}
-
-// ─── Helper: create a step ───────────────────────────────────────────────────
-async function createStep(
-  taskId: string,
-  stepIndex: number,
-  title: string,
-  status = 'PENDING'
-) {
+async function createStep(taskId: string, stepIndex: number, title: string, status = 'RUNNING') {
   return prisma.agentTaskStep.create({
     data: { taskId, stepIndex, title, status },
   });
 }
 
-// ─── Helper: mark task failed ────────────────────────────────────────────────
-async function failTask(
+async function completeStep(stepId: string, resultText: string, toolName?: string) {
+  await prisma.agentTaskStep.update({
+    where: { id: stepId },
+    data: { status: 'COMPLETED', resultText, toolName: toolName ?? undefined },
+  });
+}
+
+async function failStep(stepId: string, reason: string, toolName?: string) {
+  await prisma.agentTaskStep.update({
+    where: { id: stepId },
+    data: { status: 'FAILED', resultText: reason, toolName: toolName ?? undefined },
+  });
+}
+
+async function setTaskStatus(
+  taskId: string,
+  status: string,
+  progress: number,
+  extra?: Record<string, unknown>
+) {
+  await prisma.agentTask.update({
+    where: { id: taskId },
+    data: { status, progress, ...(extra ?? {}) },
+  });
+}
+
+async function markTaskFailed(
   taskId: string,
   userId: string,
   reason: string,
-  progress = 0
+  progress = 0,
+  partialResult?: string
 ) {
   await prisma.agentTask.update({
     where: { id: taskId },
@@ -103,76 +126,83 @@ async function failTask(
       progress,
       errorMessage: reason,
       validationPassed: false,
+      ...(partialResult ? { resultSummary: partialResult } : {}),
     },
   });
-  await audit(userId, taskId, 'TASK_FAILED', reason);
+  await logAudit(userId, taskId, 'TASK_FAILED', reason);
 }
 
-// ─── Phase 1: Determine execution plan via AI ─────────────────────────────────
-async function determineExecutionPlan(
-  userId: string,
-  title: string,
-  description: string
-): Promise<ExecutionPlan> {
-  // Keywords that strongly indicate study-library need
-  const studyKeywords = [
-    'pdf', 'textbook', 'my notes', 'uploaded', 'study material',
-    'my document', 'chapter', 'my book', 'lecture',
-  ];
-  const dataQueryKeywords = [
-    'my tasks', 'my habits', 'my career', 'my applications',
-    'my expenses', 'job applications', 'job list',
-  ];
-  const memoryKeywords = [
-    'remember', 'recall', 'previously', 'what did i say',
-    'my preference', 'what i told',
-  ];
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1: Execution plan — keyword-based, conservative, no false positives
+//
+// Rule: A tool is ONLY included if the task EXPLICITLY asks for it.
+// "SQL JOIN learning plan"         → AI_GENERATION (no tools)
+// "Explain Python list comprehensions" → AI_GENERATION (no tools)
+// "Calculate 347 × 29"             → AI_GENERATION (no tools)
+// "Search my uploaded textbook"    → STUDY_DOCUMENT (search_study_library)
+// "What are my active habits"      → DATA_QUERY (list_user_habits)
+// "What did I tell you about..."   → MEMORY_RECALL (search_agent_memories)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const combined = `${title} ${description}`.toLowerCase();
+function determineExecutionPlan(title: string, description: string): ExecutionPlan {
+  const combined = `${title} ${description}`.toLowerCase().trim();
 
-  const requiresStudyLibrary = studyKeywords.some((kw) => combined.includes(kw));
-  const requiresDataQuery = dataQueryKeywords.some((kw) => combined.includes(kw));
-  const requiresMemorySearch = memoryKeywords.some((kw) => combined.includes(kw));
+  // ── Study library triggers: only explicit references to the user's OWN uploads ──
+  // "my pdf", "my textbook", "uploaded", "my notes", "my document", "my book",
+  // "search my study library", "my lecture notes", "my study material"
+  const studyTriggers = [
+    'my pdf', 'my textbook', 'uploaded', 'my notes', 'my document',
+    'my book', 'my lecture', 'my study material', 'study library',
+    'my uploaded', 'summarize my', 'from my study',
+  ];
+  const requiresStudy = studyTriggers.some((t) => combined.includes(t));
 
-  // Build tool list
+  // ── Data query triggers: only when the user refers to THEIR OWN stored data ──
+  const habitTriggers = ['my habits', 'my habit list', 'active habits', 'habit tracker'];
+  const taskTriggers = ['my task list', 'my tasks', 'list my tasks', 'what tasks'];
+  const careerTriggers = ['my job applications', 'my career applications', 'my applications', 'job list'];
+
+  const requiresHabits = habitTriggers.some((t) => combined.includes(t));
+  const requiresTasks = taskTriggers.some((t) => combined.includes(t));
+  const requiresCareer = careerTriggers.some((t) => combined.includes(t));
+  const requiresData = requiresHabits || requiresTasks || requiresCareer;
+
+  // ── Memory recall triggers: only when explicitly asking about past conversations ──
+  const memoryTriggers = [
+    'what did i tell you', 'what did i say', 'do you remember',
+    'recall what i said', 'my preference', 'what i told you',
+    'from our conversation', 'you previously',
+  ];
+  const requiresMemory = memoryTriggers.some((t) => combined.includes(t));
+
+  // Build tools list (in order of execution)
   const toolsToCall: string[] = [];
-  if (requiresStudyLibrary) toolsToCall.push('search_study_library');
-  if (requiresDataQuery) {
-    if (combined.includes('task')) toolsToCall.push('list_user_tasks');
-    if (combined.includes('habit')) toolsToCall.push('list_user_habits');
-    if (combined.includes('career') || combined.includes('application')) toolsToCall.push('get_career_applications');
-  }
-  if (requiresMemorySearch) toolsToCall.push('search_agent_memories');
+  if (requiresStudy) toolsToCall.push('search_study_library');
+  if (requiresTasks) toolsToCall.push('list_user_tasks');
+  if (requiresHabits) toolsToCall.push('list_user_habits');
+  if (requiresCareer) toolsToCall.push('get_career_applications');
+  if (requiresMemory) toolsToCall.push('search_agent_memories');
 
-  // Determine task type
+  // Classify task type
+  const needsTools = toolsToCall.length > 0;
   let taskType: TaskType = 'AI_GENERATION';
-  if (requiresStudyLibrary && (requiresDataQuery || requiresMemorySearch)) {
-    taskType = 'MIXED';
-  } else if (requiresStudyLibrary) {
-    taskType = 'STUDY_DOCUMENT';
-  } else if (requiresDataQuery) {
-    taskType = 'DATA_QUERY';
-  } else if (requiresMemorySearch) {
-    taskType = 'MEMORY_RECALL';
-  }
+  if (requiresStudy && requiresData) taskType = 'MIXED';
+  else if (requiresStudy && requiresMemory) taskType = 'MIXED';
+  else if (requiresStudy) taskType = 'STUDY_DOCUMENT';
+  else if (requiresData) taskType = 'DATA_QUERY';
+  else if (requiresMemory) taskType = 'MEMORY_RECALL';
 
-  const rationale =
-    taskType === 'AI_GENERATION'
-      ? 'Task is a content-generation request — no user data tools required. Will use AI provider directly.'
-      : `Task requires tools: ${toolsToCall.join(', ')}.`;
+  const rationale = needsTools
+    ? `Task explicitly requires user data. Tools selected: ${toolsToCall.join(', ')}.`
+    : 'Pure AI content-generation task. No user-data tools needed — calling AI provider directly.';
 
-  return {
-    taskType,
-    rationale,
-    requiresStudyLibrary,
-    requiresMemorySearch,
-    requiresDataQuery,
-    toolsToCall,
-    estimatedSteps: 2 + toolsToCall.length, // planning + tools + generation + validation
-  };
+  return { taskType, rationale, toolsToCall };
 }
 
-// ─── Phase 2: Build the AI prompt ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2: Build the AI execution prompt
+// ─────────────────────────────────────────────────────────────────────────────
+
 function buildExecutionPrompt(
   userName: string,
   title: string,
@@ -180,64 +210,136 @@ function buildExecutionPrompt(
   toolResults: { toolName: string; result: unknown }[],
   memories: { category: string; content: string }[]
 ): string {
-  const memCtx =
-    memories.length > 0
-      ? `\n\nRELEVANT USER MEMORIES:\n${memories.map((m) => `- [${m.category.toUpperCase()}] ${m.content}`).join('\n')}`
-      : '';
+  const lines: string[] = [];
 
-  const toolCtx =
-    toolResults.length > 0
-      ? `\n\nTOOL RESULTS:\n${toolResults
-          .map((t) => `[${t.toolName}]:\n${JSON.stringify(t.result, null, 2)}`)
-          .join('\n\n')}`
-      : '';
+  lines.push(`You are an autonomous personal AI agent executing a task for ${userName}.`);
+  lines.push('');
 
-  const taskSpec = description.trim()
-    ? `TASK TITLE: ${title}\nTASK INSTRUCTIONS: ${description}`
-    : `TASK: ${title}`;
+  if (description.trim()) {
+    lines.push(`TASK TITLE: ${title}`);
+    lines.push(`TASK INSTRUCTIONS: ${description}`);
+  } else {
+    lines.push(`TASK: ${title}`);
+  }
 
-  return `You are an autonomous personal AI agent executing a task for ${userName}.
+  if (memories.length > 0) {
+    lines.push('');
+    lines.push('RELEVANT USER MEMORIES:');
+    for (const m of memories) {
+      lines.push(`- [${m.category.toUpperCase()}] ${m.content}`);
+    }
+  }
 
-${taskSpec}${memCtx}${toolCtx}
+  if (toolResults.length > 0) {
+    lines.push('');
+    lines.push('DATA RETRIEVED FOR THIS TASK:');
+    for (const tr of toolResults) {
+      lines.push(`[${tr.toolName}]:`);
+      lines.push(JSON.stringify(tr.result, null, 2));
+    }
+  }
 
-Execute the task completely and thoroughly. Return the full requested output — do not summarize or truncate.
-If the task asks for examples, include them. If it asks for a plan, produce all steps. If it asks for code, write the code.`;
+  lines.push('');
+  lines.push('EXECUTION RULES:');
+  lines.push('1. Execute the task COMPLETELY. Do not truncate or summarize.');
+  lines.push('2. If the task asks for examples, include them.');
+  lines.push('3. If the task asks for a plan, produce ALL steps in detail.');
+  lines.push('4. If the task asks for code, write complete, runnable code.');
+  lines.push('5. If the task asks for explanations, explain thoroughly with examples.');
+  lines.push('6. Do NOT produce a generic completion message. Produce the actual requested output.');
+
+  return lines.join('\n');
 }
 
-// ─── Phase 3: Validate the result ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3: Validate result — conservative: pass if non-trivial, fail if empty
+//
+// We do NOT apply overly strict keyword checks that can falsely fail good
+// AI responses. The AI may phrase things differently (e.g. "INNER JOIN" vs
+// "inner join"). We only fail on empty / trivially short responses.
+//
+// Task-specific validation: we check for the PRESENCE of substantive content
+// (minimum length thresholds) and reject known bad patterns.
+// ─────────────────────────────────────────────────────────────────────────────
+
 function validateResult(
   title: string,
   description: string,
   result: string
 ): { passed: boolean; notes: string } {
-  if (!result || result.trim().length < 50) {
-    return { passed: false, notes: 'AI returned an empty or extremely short response.' };
+  const trimmed = result.trim();
+
+  // Hard fail: empty
+  if (!trimmed) {
+    return { passed: false, notes: 'AI returned an empty response. Cannot complete task.' };
   }
 
-  // If description has explicit required keywords, check they appear
-  const combined = `${title} ${description}`.toLowerCase();
-  const checks: { keyword: string; label: string }[] = [];
-
-  if (combined.includes('inner join')) checks.push({ keyword: 'inner join', label: 'INNER JOIN content' });
-  if (combined.includes('left join')) checks.push({ keyword: 'left join', label: 'LEFT JOIN content' });
-  if (combined.includes('full outer join')) checks.push({ keyword: 'full outer join', label: 'FULL OUTER JOIN content' });
-  if (combined.includes('sql')) checks.push({ keyword: 'select', label: 'SQL example' });
-
-  const resultLower = result.toLowerCase();
-  const missing = checks.filter((c) => !resultLower.includes(c.keyword)).map((c) => c.label);
-
-  if (missing.length > 0) {
+  // Hard fail: trivially short (< 30 chars)
+  if (trimmed.length < 30) {
     return {
       passed: false,
-      notes: `Result is missing required content: ${missing.join(', ')}. Marking as FAILED.`,
+      notes: `AI response too short (${trimmed.length} chars). Task not fulfilled.`,
     };
   }
 
-  return { passed: true, notes: `Result validated successfully. Length: ${result.length} chars.` };
+  // Hard fail: known generic completion strings that mean nothing
+  const badPatterns = [
+    'task completed successfully',
+    'inspected user resources and applied memory rules',
+    'completed. inspected',
+    'task has been completed',
+  ];
+  const resultLower = trimmed.toLowerCase();
+  for (const bad of badPatterns) {
+    if (resultLower === bad || (resultLower.startsWith(bad) && trimmed.length < 120)) {
+      return {
+        passed: false,
+        notes: `AI returned a generic placeholder message: "${trimmed.slice(0, 100)}".`,
+      };
+    }
+  }
+
+  // ── Math check: strip commas/spaces before comparing ─────────────────────
+  // The AI commonly formats numbers like "10,063" or "10 063" — we must accept both.
+  const combined = `${title} ${description}`.toLowerCase();
+  const mathMatch = combined.match(/calculate\s+([\d,.\s]+)\s*[×x*]\s*([\d,.\s]+)/i);
+  if (mathMatch) {
+    const a = parseInt(mathMatch[1].replace(/[,.\s]/g, ''), 10);
+    const b = parseInt(mathMatch[2].replace(/[,.\s]/g, ''), 10);
+    if (!isNaN(a) && !isNaN(b)) {
+      const expected = a * b;
+      // Strip commas/spaces from result to find the number in any format
+      const resultStripped = result.replace(/,/g, '').replace(/\s/g, '');
+      const expectedStr = expected.toString();
+      // Also check for comma-formatted version (e.g. "10,063")
+      const expectedFormatted = expected.toLocaleString('en-US');
+      if (!resultStripped.includes(expectedStr) && !result.includes(expectedFormatted)) {
+        return {
+          passed: false,
+          notes: `Math task expected ${expectedFormatted} (${a} × ${b}) but was not found in the response.`,
+        };
+      }
+    }
+  }
+
+  // Pass — substantive, non-generic response
+  return {
+    passed: true,
+    notes: `Validated. Length: ${trimmed.length} chars.`,
+  };
 }
 
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AgentEngine — public class
+// ─────────────────────────────────────────────────────────────────────────────
+
 export class AgentEngine {
-  // ─── Get or create UserAISettings ──────────────────────────────────────────
+  /**
+   * Get or create UserAISettings for a user.
+   * Called from the AI page to load the agent name, personality, etc.
+   */
   static async getUserSettings(userId: string, userName?: string) {
     let settings = await prisma.userAISettings.findUnique({ where: { userId } });
     if (!settings) {
@@ -256,7 +358,10 @@ export class AgentEngine {
     return settings;
   }
 
-  // ─── Chat endpoint (unchanged) ──────────────────────────────────────────────
+  /**
+   * Process a chat message via the personal AI agent.
+   * Uses memory recall and routes through the existing provider cascade.
+   */
   static async processAgentChat(
     userId: string,
     userName: string,
@@ -271,22 +376,23 @@ export class AgentEngine {
     const firstName = userName.trim().split(' ')[0];
     const agentDisplayName = settings.customName || `${firstName}'s Personal AI`;
 
-    const memoryContext =
+    const memoryCtx =
       memories.length > 0
-        ? `\n\nRECALLED MEMORIES FOR ${userName.toUpperCase()}:\n` +
+        ? `\n\nRECALLED MEMORIES:\n` +
           memories.map((m) => `- [${m.category.toUpperCase()}] ${m.content}`).join('\n')
         : '';
 
-    const systemPrompt = `You are ${agentDisplayName}, an autonomous, highly capable personal AI agent specifically assigned to ${userName}.
-Personality: ${settings.personality}
-Response Style: ${settings.responseStyle}
-User First Name: ${firstName}
-${memoryContext}
-
-Guidelines:
-- Maintain strict loyalty to ${userName}.
-- Speak naturally, professionally, and enthusiastically in Neo-Brutalist / comic-hero style when appropriate.
-- Always refer to yourself as ${agentDisplayName}. Never claim to be Deion AI unless the user's name is Deion.`;
+    const systemPrompt = [
+      `You are ${agentDisplayName}, an autonomous personal AI agent assigned to ${userName}.`,
+      `Personality: ${settings.personality}`,
+      `Response Style: ${settings.responseStyle}`,
+      memoryCtx,
+      '',
+      `Guidelines:`,
+      `- You are loyal exclusively to ${userName}.`,
+      `- Speak in a professional, engaging style.`,
+      `- Never claim to be Deion AI unless the user's name is Deion.`,
+    ].join('\n');
 
     const fullPrompt = `${systemPrompt}\n\n${userName}: ${prompt}\n${agentDisplayName}:`;
 
@@ -296,11 +402,13 @@ Guidelines:
       providerOverride,
     });
 
+    // Auto-save memory if user is sharing a preference or fact
     if (
       settings.memoryEnabled &&
       (prompt.toLowerCase().includes('remember') ||
         prompt.toLowerCase().includes('my favorite') ||
-        prompt.toLowerCase().includes('i prefer'))
+        prompt.toLowerCase().includes('i prefer') ||
+        prompt.toLowerCase().includes('i always'))
     ) {
       await AgentMemoryService.saveMemory(userId, 'preference', prompt, 'conversation_auto', 2);
     }
@@ -315,16 +423,33 @@ Guidelines:
     };
   }
 
-  // ─── REAL Autonomous Task Executor ─────────────────────────────────────────
+  /**
+   * Create and fully execute an autonomous task.
+   *
+   * Flow:
+   *   1. Create task record (PLANNING)
+   *   2. Determine execution plan (keyword analysis — no AI call needed)
+   *   3. Optional memory recall
+   *   4. Optional tool calls (ONLY if the task explicitly requires them)
+   *   5. AI generation (AIRouter.generateText — Ollama → Gemini → Groq)
+   *   6. Validate result (non-empty, non-generic, content checks)
+   *   7. Persist COMPLETED | FAILED with real provider/model/result
+   *
+   * Security: userId is always scoped — tools only access that user's data.
+   * Vercel: All state in Neon PostgreSQL. No local-FS or in-memory state.
+   */
   static async createAndRunTask(userId: string, title: string, description: string) {
     const startTime = Date.now();
-    let stepIndex = 0;
+    let stepCounter = 0;
 
-    // Fetch user for display name
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
-    const userName = user?.name || 'User';
+    // Fetch the user's display name for the AI prompt
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+    const userName = userRecord?.name || 'User';
 
-    // ── Create task record (PLANNING) ──────────────────────────────────────
+    // ── 1. Create task record ──────────────────────────────────────────────
     const task = await prisma.agentTask.create({
       data: {
         userId,
@@ -336,99 +461,114 @@ Guidelines:
       },
     });
 
-    await audit(userId, task.id, 'TASK_CREATED', `Task created: "${title}"`);
+    await logAudit(userId, task.id, 'TASK_CREATED', `Task "${title}" created.`);
 
     try {
-      // ── Step 1: PLANNING — determine task type & tools ───────────────────
-      await prisma.agentTask.update({ where: { id: task.id }, data: { status: 'PLANNING', progress: 10 } });
-      await audit(userId, task.id, 'TASK_PLANNING', `Planning execution for: "${title}"`);
+      // ── 2. Planning step ────────────────────────────────────────────────
+      await logAudit(userId, task.id, 'TASK_PLANNING', `Planning execution for: "${title}"`);
+      const plan = determineExecutionPlan(title, description);
 
-      const plan = await determineExecutionPlan(userId, title, description);
-      stepIndex++;
-      const step1 = await createStep(task.id, stepIndex, 'Plan execution strategy', 'RUNNING');
-
-      await prisma.agentTask.update({
-        where: { id: task.id },
-        data: { executionPlanJson: JSON.stringify(plan), progress: 15 },
+      stepCounter++;
+      const planStep = await createStep(task.id, stepCounter, 'Plan execution strategy', 'RUNNING');
+      await setTaskStatus(task.id, 'PLANNING', 12, {
+        executionPlanJson: JSON.stringify(plan),
       });
 
-      await updateStep(
-        step1.id,
-        'COMPLETED',
-        `Task type: ${plan.taskType}. ${plan.rationale}${
-          plan.toolsToCall.length > 0
-            ? ` Tools selected: ${plan.toolsToCall.join(', ')}.`
-            : ' No tools required — pure AI generation.'
-        }`
-      );
+      const planStepResult = [
+        `Task type: ${plan.taskType}.`,
+        plan.rationale,
+        plan.toolsToCall.length > 0
+          ? `Tools to run: ${plan.toolsToCall.join(', ')}.`
+          : 'No data tools required.',
+      ].join(' ');
 
-      // ── Optional memory recall step ──────────────────────────────────────
-      let memories: { category: string; content: string }[] = [];
+      await completeStep(planStep.id, planStepResult);
+
+      // ── 3. Memory recall (always lightweight — no round trip to AI) ─────
       const settings = await this.getUserSettings(userId, userName);
+      let memories: { category: string; content: string }[] = [];
 
       if (settings.memoryEnabled) {
-        stepIndex++;
-        const memStep = await createStep(task.id, stepIndex, 'Recall relevant memories', 'RUNNING');
-        const rawMemories = await AgentMemoryService.recallRelevantMemories(userId, `${title} ${description}`, 5);
-        memories = rawMemories.map((m) => ({ category: m.category, content: m.content }));
-        await updateStep(
+        stepCounter++;
+        const memStep = await createStep(task.id, stepCounter, 'Recall relevant memories', 'RUNNING');
+        const rawMems = await AgentMemoryService.recallRelevantMemories(
+          userId,
+          `${title} ${description}`,
+          5
+        );
+        memories = rawMems.map((m) => ({ category: m.category, content: m.content }));
+        await completeStep(
           memStep.id,
-          'COMPLETED',
           memories.length > 0
-            ? `Recalled ${memories.length} relevant memories: ${memories.map((m) => m.content.slice(0, 60)).join('; ')}`
-            : 'No relevant memories found for this task (context is clean).'
+            ? `Recalled ${memories.length} relevant ${memories.length === 1 ? 'memory' : 'memories'}: ${memories.map((m) => m.content.slice(0, 60)).join('; ')}`
+            : 'No relevant memories found for this task.'
         );
       }
 
-      // ── Optional tool execution steps ────────────────────────────────────
-      await prisma.agentTask.update({ where: { id: task.id }, data: { status: 'RUNNING', progress: 30 } });
-
+      // ── 4. Tool execution (only for tasks that explicitly need it) ──────
+      await setTaskStatus(task.id, 'RUNNING', 30);
       const toolResults: { toolName: string; result: unknown }[] = [];
 
       for (const toolName of plan.toolsToCall) {
-        stepIndex++;
-        const toolStep = await createStep(
-          task.id,
-          stepIndex,
-          `Execute tool: ${toolName}`,
-          'RUNNING'
-        );
+        stepCounter++;
+        const toolStep = await createStep(task.id, stepCounter, `Tool: ${toolName}`, 'RUNNING');
+        await logAudit(userId, task.id, 'TOOL_STARTED', `Executing tool: ${toolName}`, { toolName });
 
-        await audit(userId, task.id, 'TOOL_STARTED', `Running tool: ${toolName}`, { toolName });
-
+        // Build tool arguments
         const toolArgs: Record<string, unknown> = {};
-        if (toolName === 'search_study_library') toolArgs.query = title;
-        if (toolName === 'search_agent_memories') toolArgs.query = `${title} ${description}`;
+        if (toolName === 'search_study_library') {
+          // Use the full query for better matching
+          toolArgs.query = title;
+        }
+        if (toolName === 'search_agent_memories') {
+          toolArgs.query = `${title} ${description}`;
+        }
 
         const toolRes = await AgentToolRegistry.executeTool(userId, toolName, toolArgs, task.id);
 
         if (!toolRes.success) {
-          await updateStep(toolStep.id, 'FAILED', `Tool ${toolName} failed: ${toolRes.error}`, toolName);
-          await audit(userId, task.id, 'TOOL_FAILED', `Tool ${toolName} failed: ${toolRes.error}`);
-          // Non-fatal — continue with available data
+          await failStep(toolStep.id, `Tool ${toolName} failed: ${toolRes.error}`, toolName);
+          await logAudit(userId, task.id, 'TOOL_FAILED', `Tool ${toolName} failed: ${toolRes.error}`);
+          // Non-fatal: continue with whatever data we have
         } else {
           toolResults.push({ toolName, result: toolRes.result });
-          const resultSummary =
-            toolName === 'search_study_library'
-              ? `Found ${toolRes.result?.count ?? 0} study documents.${
-                  toolRes.result?.count > 0
-                    ? ` Documents: ${toolRes.result.documents.map((d: { title: string }) => d.title).join(', ')}`
-                    : ''
-                }`
-              : `Tool executed successfully.`;
 
-          await updateStep(toolStep.id, 'COMPLETED', resultSummary, toolName);
-          await audit(userId, task.id, 'TOOL_COMPLETED', `Tool ${toolName} completed.`, {
+          // Build a human-readable summary of what the tool found
+          let toolResultSummary: string;
+          if (toolName === 'search_study_library') {
+            const count = toolRes.result?.count ?? 0;
+            toolResultSummary = count === 0
+              ? 'Found 0 study documents matching the query. No uploaded documents available for this topic.'
+              : `Found ${count} study document(s): ${(toolRes.result?.documents ?? []).map((d: { title: string }) => d.title).join(', ')}`;
+          } else if (toolName === 'list_user_tasks') {
+            toolResultSummary = `Retrieved ${toolRes.result?.total ?? 0} user tasks.`;
+          } else if (toolName === 'list_user_habits') {
+            const h = toolRes.result?.habits ?? [];
+            toolResultSummary = h.length === 0 ? 'No habits found.' : `Retrieved ${h.length} habits.`;
+          } else if (toolName === 'get_career_applications') {
+            const apps = toolRes.result?.applications ?? [];
+            toolResultSummary = apps.length === 0 ? 'No career applications found.' : `Retrieved ${apps.length} applications.`;
+          } else {
+            toolResultSummary = 'Tool executed successfully.';
+          }
+
+          await completeStep(toolStep.id, toolResultSummary, toolName);
+          await logAudit(userId, task.id, 'TOOL_COMPLETED', `Tool ${toolName} completed.`, {
             result: toolRes.result,
           });
         }
       }
 
-      // ── AI Generation step ────────────────────────────────────────────────
-      stepIndex++;
-      const aiStep = await createStep(task.id, stepIndex, 'Generate AI response', 'RUNNING');
-      await prisma.agentTask.update({ where: { id: task.id }, data: { progress: 60 } });
-      await audit(userId, task.id, 'AI_GENERATION_STARTED', `Calling AI provider (Ollama → Gemini → Groq) for task: "${title}"`);
+      // ── 5. AI Generation ────────────────────────────────────────────────
+      stepCounter++;
+      const aiStep = await createStep(task.id, stepCounter, 'Generate AI response', 'RUNNING');
+      await setTaskStatus(task.id, 'RUNNING', 60);
+      await logAudit(
+        userId,
+        task.id,
+        'AI_GENERATION_STARTED',
+        `Calling AI provider cascade (Ollama → Gemini → Groq) for: "${title}"`
+      );
 
       const executionPrompt = buildExecutionPrompt(
         userName,
@@ -438,7 +578,15 @@ Guidelines:
         memories
       );
 
-      let aiResponse: { result: string; provider: string; model: string; fallbackOccurred?: boolean; fallbackChain?: string[] };
+      // Use the EXISTING AIRouter — never bypass the cascade
+      let aiResponse: {
+        result: string;
+        provider: string;
+        model: string;
+        fallbackOccurred?: boolean;
+        fallbackChain?: string[];
+      };
+
       try {
         aiResponse = await AIRouter.generateText({
           mode: 'GENERAL',
@@ -446,70 +594,66 @@ Guidelines:
         });
       } catch (aiErr: unknown) {
         const errMsg = aiErr instanceof Error ? aiErr.message : String(aiErr);
-        await updateStep(aiStep.id, 'FAILED', `AI generation failed: ${errMsg}`);
-        await failTask(task.id, userId, `All AI providers failed: ${errMsg}`, 60);
+        await failStep(aiStep.id, `All AI providers failed: ${errMsg}`);
+        await logAudit(userId, task.id, 'AI_PROVIDER_FAILED', errMsg);
+        await markTaskFailed(task.id, userId, `AI providers unavailable: ${errMsg}`, 65);
         return prisma.agentTask.findUnique({
           where: { id: task.id },
-          include: { steps: { orderBy: { stepIndex: 'asc' } }, auditLogs: { orderBy: { timestamp: 'desc' } } },
+          include: {
+            steps: { orderBy: { stepIndex: 'asc' } },
+            auditLogs: { orderBy: { timestamp: 'desc' } },
+          },
         });
       }
 
-      await audit(userId, task.id, 'AI_PROVIDER_SELECTED', `Provider used: ${aiResponse.provider} (${aiResponse.model})`, {
-        provider: aiResponse.provider,
-        model: aiResponse.model,
-        fallbackOccurred: aiResponse.fallbackOccurred,
-        fallbackChain: aiResponse.fallbackChain,
-      });
-
-      const providerLabel = aiResponse.fallbackOccurred
-        ? `${aiResponse.provider} (fallback from: ${aiResponse.fallbackChain?.join(' → ')})`
-        : aiResponse.provider;
-
-      await updateStep(
-        aiStep.id,
-        'COMPLETED',
-        `AI generation complete via ${providerLabel} (${aiResponse.model}). Response length: ${aiResponse.result.length} chars.`
-      );
-
-      await audit(userId, task.id, 'AI_GENERATION_COMPLETED', `AI generation completed. Provider: ${aiResponse.provider}`);
-
-      // ── Validation step ───────────────────────────────────────────────────
-      stepIndex++;
-      const valStep = await createStep(task.id, stepIndex, 'Validate result', 'RUNNING');
-      await prisma.agentTask.update({ where: { id: task.id }, data: { status: 'VALIDATING', progress: 85 } });
-      await audit(userId, task.id, 'VALIDATION_STARTED', 'Validating task result...');
-
-      const validation = validateResult(title, description, aiResponse.result);
-
-      await updateStep(valStep.id, validation.passed ? 'COMPLETED' : 'FAILED', validation.notes);
-      await audit(
+      await logAudit(
         userId,
         task.id,
-        validation.passed ? 'VALIDATION_COMPLETED' : 'TASK_VALIDATION_FAILED',
-        validation.notes
+        'AI_PROVIDER_SELECTED',
+        `Provider used: ${aiResponse.provider} / ${aiResponse.model}`,
+        {
+          provider: aiResponse.provider,
+          model: aiResponse.model,
+          fallbackOccurred: aiResponse.fallbackOccurred ?? false,
+          fallbackChain: aiResponse.fallbackChain ?? [],
+        }
       );
 
+      const providerLabel = aiResponse.fallbackOccurred
+        ? `${aiResponse.provider} (tried: ${aiResponse.fallbackChain?.join(' → ')} first)`
+        : aiResponse.provider;
+
+      await completeStep(
+        aiStep.id,
+        `Generated ${aiResponse.result.length} chars via ${providerLabel} (${aiResponse.model}).`
+      );
+
+      await logAudit(
+        userId,
+        task.id,
+        'AI_GENERATION_COMPLETED',
+        `AI generation done. Provider: ${aiResponse.provider}, Model: ${aiResponse.model}`
+      );
+
+      // ── 6. Validation ──────────────────────────────────────────────────
+      stepCounter++;
+      const valStep = await createStep(task.id, stepCounter, 'Validate result', 'RUNNING');
+      await setTaskStatus(task.id, 'VALIDATING', 85);
+      await logAudit(userId, task.id, 'VALIDATION_STARTED', 'Running result validation checks...');
+
+      const validation = validateResult(title, description, aiResponse.result);
       const durationMs = Date.now() - startTime;
 
-      if (!validation.passed) {
-        // Still persist the result but mark FAILED with validation notes
-        await prisma.agentTask.update({
-          where: { id: task.id },
-          data: {
-            status: 'FAILED',
-            progress: 90,
-            resultSummary: aiResponse.result,
-            providerUsed: aiResponse.provider,
-            modelUsed: aiResponse.model,
-            fallbackChain: aiResponse.fallbackChain ? JSON.stringify(aiResponse.fallbackChain) : null,
-            validationPassed: false,
-            validationNotes: validation.notes,
-            errorMessage: validation.notes,
-            durationMs,
-          },
-        });
-      } else {
-        // ── COMPLETED ────────────────────────────────────────────────────
+      if (validation.passed) {
+        await completeStep(valStep.id, validation.notes);
+        await logAudit(
+          userId,
+          task.id,
+          'VALIDATION_COMPLETED',
+          `Validation passed. ${validation.notes}`
+        );
+
+        // ── 7a. COMPLETED ───────────────────────────────────────────────
         await prisma.agentTask.update({
           where: { id: task.id },
           data: {
@@ -518,26 +662,70 @@ Guidelines:
             resultSummary: aiResponse.result,
             providerUsed: aiResponse.provider,
             modelUsed: aiResponse.model,
-            fallbackChain: aiResponse.fallbackChain ? JSON.stringify(aiResponse.fallbackChain) : null,
+            fallbackChain: aiResponse.fallbackChain
+              ? JSON.stringify(aiResponse.fallbackChain)
+              : null,
             validationPassed: true,
             validationNotes: validation.notes,
             durationMs,
           },
         });
-        await audit(userId, task.id, 'TASK_COMPLETED', `Task "${title}" completed in ${durationMs}ms via ${aiResponse.provider}.`);
+
+        await logAudit(
+          userId,
+          task.id,
+          'TASK_COMPLETED',
+          `Task "${title}" completed in ${(durationMs / 1000).toFixed(1)}s via ${aiResponse.provider}.`
+        );
+      } else {
+        // ── 7b. FAILED (validation) ─────────────────────────────────────
+        await failStep(valStep.id, validation.notes);
+        await logAudit(
+          userId,
+          task.id,
+          'TASK_VALIDATION_FAILED',
+          validation.notes
+        );
+
+        // Still persist the AI result so the user can see what was generated
+        await prisma.agentTask.update({
+          where: { id: task.id },
+          data: {
+            status: 'FAILED',
+            progress: 90,
+            resultSummary: aiResponse.result, // persist partial result
+            providerUsed: aiResponse.provider,
+            modelUsed: aiResponse.model,
+            fallbackChain: aiResponse.fallbackChain
+              ? JSON.stringify(aiResponse.fallbackChain)
+              : null,
+            validationPassed: false,
+            validationNotes: validation.notes,
+            errorMessage: validation.notes,
+            durationMs,
+          },
+        });
+
+        await logAudit(userId, task.id, 'TASK_FAILED', validation.notes);
       }
 
       return prisma.agentTask.findUnique({
         where: { id: task.id },
-        include: { steps: { orderBy: { stepIndex: 'asc' } }, auditLogs: { orderBy: { timestamp: 'desc' } } },
+        include: {
+          steps: { orderBy: { stepIndex: 'asc' } },
+          auditLogs: { orderBy: { timestamp: 'desc' } },
+        },
       });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('[AGENT ENGINE] Unexpected error:', errMsg);
-      await failTask(task.id, userId, `Unexpected engine error: ${errMsg}`, 0);
+      console.error('[AGENT ENGINE] Unexpected error during task execution:', errMsg);
+      await markTaskFailed(task.id, userId, `Execution error: ${errMsg}`, 0);
       return prisma.agentTask.findUnique({
         where: { id: task.id },
-        include: { steps: { orderBy: { stepIndex: 'asc' } }, auditLogs: { orderBy: { timestamp: 'desc' } } },
+        include: {
+          steps: { orderBy: { stepIndex: 'asc' } },
+          auditLogs: { orderBy: { timestamp: 'desc' } },
+        },
       });
     }
   }

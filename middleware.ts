@@ -41,8 +41,20 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // Handle idle expiration or unauthenticated users trying to access protected routes
+  // Handle idle expiration or unauthenticated users
   if (!isValid && pathname !== '/login' && !pathname.startsWith('/login') && !pathname.startsWith('/signup')) {
+    // API routes must return 401 JSON — never redirect, the client uses fetch()
+    if (pathname.startsWith('/api/')) {
+      return new NextResponse(
+        JSON.stringify({ error: isIdleExpired ? 'Session expired due to inactivity' : 'Unauthorized' }),
+        {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Page routes redirect to /login
     const loginUrl = new URL('/login', req.url);
     if (isIdleExpired) {
       loginUrl.searchParams.set('expired', 'true');
@@ -50,13 +62,14 @@ export async function middleware(req: NextRequest) {
     if (pathname && pathname !== '/') {
       loginUrl.searchParams.set('returnUrl', pathname);
     }
-    
+
     const response = NextResponse.redirect(loginUrl);
     if (isIdleExpired) {
       response.cookies.set('dh_session', '', { path: '/', expires: new Date(0) });
     }
     return response;
   }
+
 
   // Redirect authenticated users away from /login or /signup to /
   if (isValid && (pathname === '/login' || pathname === '/signup')) {
