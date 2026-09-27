@@ -1,7 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import { AgentMemoryService } from './memory-service';
+import { WebSearchService } from './web-search-service';
 
 const prisma = new PrismaClient();
+
 
 export interface AgentToolCall {
   name: string;
@@ -129,9 +131,24 @@ export class AgentToolRegistry {
           break;
         }
 
+        // 9. Real Web Search / Research
+        case 'web_search': {
+          const query = args.query || args.searchQuery || '';
+          if (!query) throw new Error('Search query required for web_search');
+          const searchRes = await WebSearchService.search(query, 5);
+          result = {
+            query,
+            count: searchRes.results.length,
+            results: searchRes.results,
+            sources: searchRes.sources,
+          };
+          break;
+        }
+
         default:
           throw new Error(`Unknown agent tool: ${toolName}`);
       }
+
     } catch (err: any) {
       success = false;
       error = err.message || 'Tool execution failed';

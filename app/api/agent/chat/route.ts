@@ -33,10 +33,9 @@ export async function POST(req: NextRequest) {
 
     const result = await AgentEngine.processAgentChat(
       session.userId,
-      user.name,
-      prompt,
-      providerOverride || 'auto'
+      prompt
     );
+
 
     return NextResponse.json(result);
   } catch (err: any) {
