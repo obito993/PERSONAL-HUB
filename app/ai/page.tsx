@@ -145,6 +145,19 @@ export default function AiPage() {
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [creatingTask, setCreatingTask] = useState(false);
 
+  // Task History Controls & Selection
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
+  const [taskStatusFilter, setTaskStatusFilter] = useState<'ALL' | 'COMPLETED' | 'RUNNING' | 'FAILED'>('ALL');
+
+  // Task Delete Modals & Feedback
+  const [taskToDelete, setTaskToDelete] = useState<AgentTask | null>(null);
+  const [bulkDeleteType, setBulkDeleteType] = useState<'SELECTED' | 'COMPLETED' | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [taskFeedback, setTaskFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+
   // Automations State
   const [automations, setAutomations] = useState<AgentAutomation[]>([]);
   const [autoTitle, setAutoTitle] = useState('');
@@ -418,6 +431,129 @@ export default function AiPage() {
       setCreatingTask(false);
     }
   };
+
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete || deletingTaskId) return;
+    const targetId = taskToDelete.id;
+    setDeletingTaskId(targetId);
+
+    try {
+      const res = await fetch(`/api/agent/tasks?id=${targetId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setAgentTasks((prev) => prev.filter((t) => t.id !== targetId));
+        setSelectedTaskIds((prev) => prev.filter((id) => id !== targetId));
+        setTaskToDelete(null);
+        setTaskFeedback({ message: 'Autonomous task deleted.', type: 'success' });
+        sound.playPop();
+        setTimeout(() => setTaskFeedback(null), 4000);
+      } else {
+        const data = await res.json();
+        setTaskFeedback({ message: data.error || 'Failed to delete task.', type: 'error' });
+      }
+    } catch (err) {
+      setTaskFeedback({ message: 'Failed to delete task.', type: 'error' });
+    } finally {
+      setDeletingTaskId(null);
+    }
+  };
+
+  const confirmBulkDeleteTasks = async () => {
+    if (!bulkDeleteType || isBulkDeleting) return;
+    setIsBulkDeleting(true);
+
+    try {
+      let url = '/api/agent/tasks';
+      let options: RequestInit = {};
+
+      if (bulkDeleteType === 'COMPLETED') {
+        url = '/api/agent/tasks?completedOnly=true';
+        options = { method: 'DELETE' };
+      } else {
+        options = {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: selectedTaskIds }),
+        };
+      }
+
+      const res = await fetch(url, options);
+      if (res.ok) {
+        const data = await res.json();
+        if (bulkDeleteType === 'COMPLETED') {
+          setAgentTasks((prev) => prev.filter((t) => t.status !== 'COMPLETED'));
+          setSelectedTaskIds((prev) =>
+            prev.filter((id) => {
+              const task = agentTasks.find((t) => t.id === id);
+              return task && task.status !== 'COMPLETED';
+            })
+          );
+        } else {
+          const deletedSet = new Set(selectedTaskIds);
+          setAgentTasks((prev) => prev.filter((t) => !deletedSet.has(t.id)));
+          setSelectedTaskIds([]);
+        }
+
+        setBulkDeleteType(null);
+        setTaskFeedback({
+          message: `Successfully deleted ${data.count || ''} autonomous task(s).`,
+          type: 'success',
+        });
+        sound.playPop();
+        setTimeout(() => setTaskFeedback(null), 4000);
+      } else {
+        const data = await res.json();
+        setTaskFeedback({ message: data.error || 'Failed to delete tasks.', type: 'error' });
+      }
+    } catch (err) {
+      setTaskFeedback({ message: 'Failed to delete tasks.', type: 'error' });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const filteredTasks = agentTasks.filter((t) => {
+    if (taskStatusFilter === 'COMPLETED' && t.status !== 'COMPLETED') return false;
+    if (taskStatusFilter === 'FAILED' && t.status !== 'FAILED' && t.status !== 'BLOCKED') return false;
+    if (
+      taskStatusFilter === 'RUNNING' &&
+      t.status !== 'RUNNING' &&
+      t.status !== 'PLANNING' &&
+      t.status !== 'VALIDATING'
+    ) {
+      return false;
+    }
+
+    if (taskSearchQuery.trim()) {
+      const q = taskSearchQuery.toLowerCase();
+      const inTitle = t.title.toLowerCase().includes(q);
+      const inDesc = (t.description || '').toLowerCase().includes(q);
+      const inResult = (t.resultSummary || '').toLowerCase().includes(q);
+      return inTitle || inDesc || inResult;
+    }
+
+    return true;
+  });
+
+  const deletableFilteredTasks = filteredTasks.filter(
+    (t) => !['RUNNING', 'PLANNING', 'VALIDATING'].includes(t.status)
+  );
+
+  const toggleSelectAllTasks = () => {
+    const deletableIds = deletableFilteredTasks.map((t) => t.id);
+    const allSelected = deletableIds.length > 0 && deletableIds.every((id) => selectedTaskIds.includes(id));
+    if (allSelected) {
+      setSelectedTaskIds((prev) => prev.filter((id) => !deletableIds.includes(id)));
+    } else {
+      setSelectedTaskIds((prev) => Array.from(new Set([...prev, ...deletableIds])));
+    }
+  };
+
+  const toggleSelectTask = (id: string) => {
+    setSelectedTaskIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
 
   const handleCreateAutomation = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -971,6 +1107,7 @@ export default function AiPage() {
       {/* TAB 3: AUTONOMOUS TASKS */}
       {activeTab === 'tasks' && (
         <div className="space-y-6">
+          {/* TASK LAUNCHER FORM */}
           <div className="bg-white comic-border-lg p-6 shadow-comic space-y-4">
             <h3 className="font-black text-xl uppercase flex items-center gap-2">
               <ListTodo className="w-6 h-6 text-[#FF5A5F]" />
@@ -980,7 +1117,7 @@ export default function AiPage() {
               Describe any task. The agent will dynamically plan, select tools if needed, call the AI provider cascade, validate the result, and persist it.
             </p>
 
-            <form onSubmit={handleCreateTask} className="space-y-3">
+            <form onSubmit={handleCreateTask} className="space-y-3" id="task-launcher-form">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                 <input
                   type="text"
@@ -1006,132 +1143,418 @@ export default function AiPage() {
             </form>
           </div>
 
-          {agentTasks.length === 0 ? (
-            <div className="text-center py-12 font-mono text-sm font-bold text-gray-500">
-              No tasks launched yet. Create your first autonomous task above.
+          {/* TASK HISTORY TOOLBAR & CONTROLS */}
+          <div className="bg-white comic-border-lg p-6 shadow-comic space-y-4 font-mono text-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b-2 border-black">
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-lg uppercase flex items-center gap-2">
+                  <ListTodo className="w-5 h-5 text-red-500" />
+                  <span>AUTONOMOUS TASK HISTORY</span>
+                </h3>
+                <span className="bg-black text-white text-xs font-black px-2.5 py-0.5 rounded font-mono">
+                  {filteredTasks.length} {filteredTasks.length === 1 ? 'TASK' : 'TASKS'}
+                </span>
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(['ALL', 'COMPLETED', 'RUNNING', 'FAILED'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setTaskStatusFilter(filter)}
+                    className={`comic-border-sm px-2.5 py-1 text-[10px] font-black cursor-pointer uppercase transition-colors ${
+                      taskStatusFilter === filter
+                        ? 'bg-black text-white'
+                        : 'bg-gray-100 text-black hover:bg-gray-200'
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {agentTasks.map((t) => {
-                const statusColor =
-                  t.status === 'COMPLETED'
-                    ? 'bg-green-300'
-                    : t.status === 'FAILED' || t.status === 'BLOCKED'
-                    ? 'bg-red-300'
-                    : t.status === 'VALIDATING'
-                    ? 'bg-purple-200'
-                    : 'bg-yellow-300';
 
-                const providerBadge =
-                  t.providerUsed === 'ollama'
-                    ? '🦙 OLLAMA'
-                    : t.providerUsed === 'gemini'
-                    ? '✨ GEMINI'
-                    : t.providerUsed === 'groq'
-                    ? '⚡ GROQ'
-                    : null;
+            {/* Notification Banner */}
+            {taskFeedback && (
+              <div
+                className={`comic-border-sm p-3 font-mono text-xs font-bold flex items-center justify-between gap-2 ${
+                  taskFeedback.type === 'success'
+                    ? 'bg-green-100 text-green-900 border-green-500'
+                    : 'bg-red-100 text-red-900 border-red-500'
+                }`}
+              >
+                <span>{taskFeedback.message}</span>
+                <button
+                  type="button"
+                  onClick={() => setTaskFeedback(null)}
+                  className="text-xs font-black uppercase text-gray-700 hover:text-black cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
-                return (
-                  <div key={t.id} className="bg-white comic-border-lg p-5 shadow-comic space-y-4 font-mono text-xs">
-                    {/* Header row */}
-                    <div className="flex items-start justify-between pb-2 border-b-2 border-black gap-4">
-                      <div className="space-y-1">
-                        <span className="font-black font-sans text-base text-black block">{t.title}</span>
-                        {t.description && (
-                          <span className="text-gray-600 font-sans text-xs">{t.description}</span>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded border border-black ${statusColor}`}>
-                          {t.status}
-                        </span>
-                        <span className="text-[11px] text-gray-400">
-                          {new Date(t.createdAt).toLocaleTimeString()}
-                          {t.durationMs ? ` • ${(t.durationMs / 1000).toFixed(1)}s` : ''}
-                        </span>
-                      </div>
-                    </div>
+            {/* Search Input & Bulk Cleanup Actions Toolbar */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              {/* Search Bar */}
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={taskSearchQuery}
+                  onChange={(e) => setTaskSearchQuery(e.target.value)}
+                  placeholder="Search task title, prompt, or result..."
+                  className="comic-input w-full text-xs font-bold pl-8 py-1.5"
+                />
+                <span className="absolute left-2.5 top-2 text-gray-400">🔍</span>
+                {taskSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setTaskSearchQuery('')}
+                    className="absolute right-2 top-2 text-xs font-black text-gray-400 hover:text-black cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
 
-                    {/* Provider / Model row */}
-                    {t.providerUsed && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="bg-black text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
-                          {providerBadge || t.providerUsed}
-                        </span>
-                        <span className="text-[11px] font-bold text-gray-600 font-sans">
-                          Model: {t.modelUsed}
-                        </span>
-                        {t.fallbackChain && JSON.parse(t.fallbackChain).length > 0 && (
-                          <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded border border-amber-400">
-                            FALLBACK: tried {JSON.parse(t.fallbackChain).join(' → ')} first
-                          </span>
-                        )}
-                        {t.validationPassed === true && (
-                          <span className="bg-green-100 text-green-800 text-[10px] font-black px-2 py-0.5 rounded border border-green-400">
-                            ✓ VALIDATED
-                          </span>
-                        )}
-                      </div>
-                    )}
+              {/* Bulk Actions */}
+              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                {deletableFilteredTasks.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllTasks}
+                    className="comic-border-sm bg-gray-100 hover:bg-gray-200 text-black px-3 py-1.5 text-xs font-black cursor-pointer"
+                  >
+                    {deletableFilteredTasks.every((t) => selectedTaskIds.includes(t.id))
+                      ? 'DESELECT ALL'
+                      : 'SELECT ALL'}
+                  </button>
+                )}
 
-                    {/* Error message */}
-                    {(t.status === 'FAILED' || t.status === 'BLOCKED') && t.errorMessage && (
-                      <div className="bg-red-50 comic-border-sm p-3 text-red-800 font-sans text-xs font-bold">
-                        ❌ FAILURE: {t.errorMessage}
-                      </div>
-                    )}
+                {selectedTaskIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteType('SELECTED')}
+                    className="comic-border-sm bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 text-xs font-black cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>DELETE SELECTED ({selectedTaskIds.length})</span>
+                  </button>
+                )}
 
-                    {/* Actual AI result */}
-                    {t.resultSummary && (
-                      <div className="space-y-1">
-                        <span className="font-black text-[10px] uppercase text-gray-600">
-                          {t.status === 'COMPLETED' ? '✅ TASK RESULT:' : '⚡ PARTIAL RESULT:'}
-                        </span>
-                        <div className="bg-[#FFFDF5] comic-border-sm p-3 font-sans text-sm font-bold text-gray-900 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-                          {t.resultSummary}
-                        </div>
-                      </div>
-                    )}
+                {agentTasks.some((t) => t.status === 'COMPLETED') && (
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteType('COMPLETED')}
+                    className="comic-border-sm bg-amber-400 hover:bg-amber-500 text-black px-3 py-1.5 text-xs font-black cursor-pointer flex items-center gap-1.5"
+                    title="Delete all completed tasks from history"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>DELETE ALL COMPLETED</span>
+                  </button>
+                )}
+              </div>
+            </div>
 
-                    {/* Execution steps */}
-                    <div className="space-y-1.5">
-                      <span className="font-black text-[10px] text-gray-500 uppercase">EXECUTION STEPS:</span>
-                      {t.steps.map((s) => {
-                        const stepStatusColor =
-                          s.status === 'COMPLETED'
-                            ? 'text-green-700'
-                            : s.status === 'FAILED'
-                            ? 'text-red-600'
-                            : 'text-gray-500';
-                        return (
-                          <div key={s.id} className="bg-gray-50 comic-border-sm p-2.5 space-y-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-bold text-black">
-                                Step {s.stepIndex}: {s.title}
-                              </span>
-                              <span className={`font-black text-[10px] ${stepStatusColor}`}>{s.status}</span>
-                            </div>
-                            {s.resultText && (
-                              <p className="text-gray-700 font-sans text-[11px] leading-relaxed whitespace-pre-wrap">
-                                {s.resultText}
-                              </p>
-                            )}
-                            {s.toolName && (
-                              <span className="bg-blue-100 text-blue-800 text-[9px] font-black px-1.5 py-0.5 rounded">
-                                TOOL: {s.toolName}
-                              </span>
+            {/* TASK LIST OR EMPTY STATE */}
+            {agentTasks.length === 0 ? (
+              <div className="bg-[#FFFDF5] comic-border-md p-10 text-center space-y-3">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto comic-border-sm">
+                  <ListTodo className="w-6 h-6 text-red-500" />
+                </div>
+                <h4 className="font-black text-base uppercase text-black">NO AUTONOMOUS TASKS</h4>
+                <p className="font-sans text-xs font-bold text-gray-600 max-w-md mx-auto leading-relaxed">
+                  You haven't launched any autonomous tasks yet.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const elem = document.getElementById('task-launcher-form');
+                    elem?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="btn-comic btn-comic-red px-4 py-2 font-black text-xs uppercase cursor-pointer"
+                >
+                  LAUNCH A TASK
+                </button>
+              </div>
+            ) : filteredTasks.length === 0 ? (
+              <div className="bg-[#FFFDF5] comic-border-md p-8 text-center space-y-2 font-sans font-bold text-xs text-gray-600">
+                <p>No autonomous tasks match your current search or status filter.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTaskSearchQuery('');
+                    setTaskStatusFilter('ALL');
+                  }}
+                  className="text-purple-600 underline font-mono font-black uppercase hover:text-purple-800 cursor-pointer"
+                >
+                  CLEAR FILTERS
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredTasks.map((t) => {
+                  const statusColor =
+                    t.status === 'COMPLETED'
+                      ? 'bg-green-300'
+                      : t.status === 'FAILED' || t.status === 'BLOCKED'
+                      ? 'bg-red-300'
+                      : t.status === 'VALIDATING'
+                      ? 'bg-purple-200'
+                      : 'bg-yellow-300';
+
+                  const providerBadge =
+                    t.providerUsed === 'ollama'
+                      ? '🦙 OLLAMA'
+                      : t.providerUsed === 'gemini'
+                      ? '✨ GEMINI'
+                      : t.providerUsed === 'groq'
+                      ? '⚡ GROQ'
+                      : null;
+
+                  const isRunning = ['RUNNING', 'PLANNING', 'VALIDATING'].includes(t.status);
+                  const isSelected = selectedTaskIds.includes(t.id);
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`bg-white comic-border-lg p-5 shadow-comic space-y-4 font-mono text-xs transition-colors ${
+                        isSelected ? 'ring-2 ring-purple-500 bg-purple-50/20' : ''
+                      }`}
+                    >
+                      {/* Header row */}
+                      <div className="flex items-start justify-between pb-2 border-b-2 border-black gap-4">
+                        <div className="flex items-start gap-3">
+                          {/* Bulk Selection Checkbox */}
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={isRunning}
+                            onChange={() => toggleSelectTask(t.id)}
+                            className="mt-1 w-4 h-4 rounded border-2 border-black text-purple-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={isRunning ? 'Cannot select active running task' : 'Select task'}
+                          />
+
+                          <div className="space-y-1">
+                            <span className="font-black font-sans text-base text-black block">{t.title}</span>
+                            {t.description && (
+                              <span className="text-gray-600 font-sans text-xs">{t.description}</span>
                             )}
                           </div>
-                        );
-                      })}
+                        </div>
+
+                        {/* Top-Right Status & Delete Task Button */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded border border-black ${statusColor}`}>
+                              {t.status}
+                            </span>
+                            <span className="text-[11px] text-gray-400">
+                              {new Date(t.createdAt).toLocaleTimeString()}
+                              {t.durationMs ? ` • ${(t.durationMs / 1000).toFixed(1)}s` : ''}
+                            </span>
+                          </div>
+
+                          {/* Individual DELETE TASK Button */}
+                          <button
+                            type="button"
+                            disabled={isRunning}
+                            onClick={() => setTaskToDelete(t)}
+                            className="bg-red-100 hover:bg-red-200 text-red-700 p-2 comic-border-sm transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={isRunning ? 'Cannot delete an active running task' : 'Delete task'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Provider / Model row */}
+                      {t.providerUsed && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="bg-black text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
+                            {providerBadge || t.providerUsed}
+                          </span>
+                          <span className="text-[11px] font-bold text-gray-600 font-sans">
+                            Model: {t.modelUsed}
+                          </span>
+                          {t.fallbackChain && JSON.parse(t.fallbackChain).length > 0 && (
+                            <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded border border-amber-400">
+                              FALLBACK: tried {JSON.parse(t.fallbackChain).join(' → ')} first
+                            </span>
+                          )}
+                          {t.validationPassed === true && (
+                            <span className="bg-green-100 text-green-800 text-[10px] font-black px-2 py-0.5 rounded border border-green-400">
+                              ✓ VALIDATED
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Error message */}
+                      {(t.status === 'FAILED' || t.status === 'BLOCKED') && t.errorMessage && (
+                        <div className="bg-red-50 comic-border-sm p-3 text-red-800 font-sans text-xs font-bold">
+                          ❌ FAILURE: {t.errorMessage}
+                        </div>
+                      )}
+
+                      {/* Actual AI result */}
+                      {t.resultSummary && (
+                        <div className="space-y-1">
+                          <span className="font-black text-[10px] uppercase text-gray-600">
+                            {t.status === 'COMPLETED' ? '✅ TASK RESULT:' : '⚡ PARTIAL RESULT:'}
+                          </span>
+                          <div className="bg-[#FFFDF5] comic-border-sm p-3 font-sans text-sm font-bold text-gray-900 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                            {t.resultSummary}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Execution steps */}
+                      <div className="space-y-1.5">
+                        <span className="font-black text-[10px] text-gray-500 uppercase">EXECUTION STEPS:</span>
+                        {t.steps.map((s) => {
+                          const stepStatusColor =
+                            s.status === 'COMPLETED'
+                              ? 'text-green-700'
+                              : s.status === 'FAILED'
+                              ? 'text-red-600'
+                              : 'text-gray-500';
+                          return (
+                            <div key={s.id} className="bg-gray-50 comic-border-sm p-2.5 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-bold text-black">
+                                  Step {s.stepIndex}: {s.title}
+                                </span>
+                                <span className={`font-black text-[10px] ${stepStatusColor}`}>{s.status}</span>
+                              </div>
+                              {s.resultText && (
+                                <p className="text-gray-700 font-sans text-[11px] leading-relaxed whitespace-pre-wrap">
+                                  {s.resultText}
+                                </p>
+                              )}
+                              {s.toolName && (
+                                <span className="bg-blue-100 text-blue-800 text-[9px] font-black px-1.5 py-0.5 rounded">
+                                  TOOL: {s.toolName}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* SINGLE TASK DELETE CONFIRMATION MODAL */}
+          {taskToDelete && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in font-sans">
+              <div className="bg-white comic-border-lg p-6 max-w-md w-full shadow-comic space-y-4 font-mono">
+                <div className="flex items-center gap-3 border-b-2 border-black pb-3">
+                  <div className="bg-red-100 comic-border-sm p-2 text-red-600">
+                    <Trash2 className="w-6 h-6" />
                   </div>
-                );
-              })}
+                  <div>
+                    <h3 className="font-black text-base text-black uppercase">DELETE AUTONOMOUS TASK?</h3>
+                    <p className="text-[11px] font-bold text-gray-500 truncate max-w-[260px]">{taskToDelete.title}</p>
+                  </div>
+                </div>
+
+                <p className="font-sans text-xs font-bold text-gray-700 leading-relaxed bg-[#FFFDF5] comic-border-sm p-3">
+                  Are you sure you want to permanently delete this task?
+                </p>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setTaskToDelete(null)}
+                    disabled={!!deletingTaskId}
+                    className="btn-comic btn-comic-white px-4 py-2 font-black text-xs uppercase cursor-pointer disabled:opacity-50"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeleteTask}
+                    disabled={!!deletingTaskId}
+                    className="btn-comic bg-red-500 hover:bg-red-600 text-white px-4 py-2 font-black text-xs uppercase cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {deletingTaskId ? (
+                      <span>DELETING...</span>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>DELETE TASK</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* BULK DELETE CONFIRMATION MODAL */}
+          {bulkDeleteType && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in font-sans">
+              <div className="bg-white comic-border-lg p-6 max-w-md w-full shadow-comic space-y-4 font-mono">
+                <div className="flex items-center gap-3 border-b-2 border-black pb-3">
+                  <div className="bg-red-100 comic-border-sm p-2 text-red-600">
+                    <Trash2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-black uppercase">
+                      {bulkDeleteType === 'COMPLETED'
+                        ? 'DELETE ALL COMPLETED TASKS?'
+                        : `DELETE ${selectedTaskIds.length} TASKS?`}
+                    </h3>
+                    <p className="text-[11px] font-bold text-gray-500">Permanent Task History Cleanup</p>
+                  </div>
+                </div>
+
+                <p className="font-sans text-xs font-bold text-gray-700 leading-relaxed bg-[#FFFDF5] comic-border-sm p-3">
+                  {bulkDeleteType === 'COMPLETED'
+                    ? 'This will permanently remove all completed autonomous tasks from your history.'
+                    : 'These autonomous tasks will be permanently deleted.'}
+                </p>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setBulkDeleteType(null)}
+                    disabled={isBulkDeleting}
+                    className="btn-comic btn-comic-white px-4 py-2 font-black text-xs uppercase cursor-pointer disabled:opacity-50"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmBulkDeleteTasks}
+                    disabled={isBulkDeleting}
+                    className="btn-comic bg-red-500 hover:bg-red-600 text-white px-4 py-2 font-black text-xs uppercase cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isBulkDeleting ? (
+                      <span>DELETING...</span>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>
+                          {bulkDeleteType === 'COMPLETED'
+                            ? 'DELETE COMPLETED'
+                            : `DELETE ${selectedTaskIds.length} TASKS`}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       )}
+
 
       {/* TAB 4: AUTOMATIONS */}
       {activeTab === 'automations' && (
