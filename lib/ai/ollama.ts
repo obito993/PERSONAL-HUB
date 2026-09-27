@@ -35,7 +35,7 @@ export class OllamaClient {
       const res = await fetch(`${this.baseUrl}/api/tags`, {
         method: 'GET',
         headers,
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(2000),
       });
 
       if (!res.ok) {
@@ -106,29 +106,36 @@ export class OllamaClient {
     }
     messages.push({ role: 'user', content: prompt });
 
-    const res = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        model: modelToUse,
-        messages,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
+    try {
+      const res = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({
+          model: modelToUse,
+          messages,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Ollama API error (HTTP ${res.status}): ${errText || res.statusText}`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Ollama API error (HTTP ${res.status}): ${errText || res.statusText}`);
+      }
+
+      const json = await res.json();
+      const text = json.message?.content || json.response || '';
+      if (!text) {
+        throw new Error('Ollama returned empty response');
+      }
+
+      return { text, model: modelToUse };
+    } catch (err: unknown) {
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        throw new Error('Ollama request timed out after 8s');
+      }
+      throw err;
     }
-
-    const json = await res.json();
-    const text = json.message?.content || json.response || '';
-    if (!text) {
-      throw new Error('Ollama returned empty response');
-    }
-
-    return { text, model: modelToUse };
   }
 
   /**

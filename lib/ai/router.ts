@@ -44,6 +44,7 @@ export class AIRouter {
   public static async generateText(options: AIRequestOptions): Promise<AIResponse> {
     const systemPrompt = getSystemPrompt(options.mode || 'GENERAL', options.context);
     const fallbackChain: ProviderName[] = [];
+    const providerErrors: Record<string, string> = {};
 
     // Check if user specifically requested a single provider
     const requestedProvider = options.providerOverride && options.providerOverride !== 'auto' 
@@ -70,6 +71,7 @@ export class AIRouter {
           throw err;
         }
         fallbackChain.push(requestedProvider);
+        providerErrors[requestedProvider] = err instanceof Error ? err.message : String(err);
       }
     }
 
@@ -86,12 +88,16 @@ export class AIRouter {
           fallbackChain: fallbackChain.length > 0 ? fallbackChain : undefined,
         };
       } else {
-        console.warn(`[AI ROUTER] Ollama local unavailable (${ollamaHealth.error || 'offline'}). Cascading to Gemini...`);
+        const errMsg = ollamaHealth.error || 'Ollama offline or unreachable';
+        console.warn(`[AI ROUTER] Ollama local unavailable (${errMsg}). Cascading to Gemini...`);
         fallbackChain.push('ollama');
+        providerErrors.ollama = errMsg;
       }
     } catch (err) {
-      console.warn('[AI ROUTER] Ollama call failed. Cascading to Gemini cloud:', err instanceof Error ? err.message : err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn('[AI ROUTER] Ollama call failed. Cascading to Gemini cloud:', errMsg);
       fallbackChain.push('ollama');
+      providerErrors.ollama = errMsg;
     }
 
     // 2. Secondary Provider: GEMINI (Cloud)
@@ -107,12 +113,16 @@ export class AIRouter {
           fallbackChain,
         };
       } else {
-        console.warn('[AI ROUTER] Gemini key missing. Cascading to Groq...');
+        const errMsg = geminiHealth.error || 'Gemini API key not configured';
+        console.warn(`[AI ROUTER] Gemini key missing/unconfigured (${errMsg}). Cascading to Groq...`);
         fallbackChain.push('gemini');
+        providerErrors.gemini = errMsg;
       }
     } catch (err) {
-      console.warn('[AI ROUTER] Gemini cloud call failed. Cascading to Groq:', err instanceof Error ? err.message : err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn('[AI ROUTER] Gemini cloud call failed. Cascading to Groq:', errMsg);
       fallbackChain.push('gemini');
+      providerErrors.gemini = errMsg;
     }
 
     // 3. Third Provider: GROQ (Cloud)
@@ -128,16 +138,23 @@ export class AIRouter {
           fallbackChain,
         };
       } else {
+        const errMsg = groqHealth.error || 'Groq API key not configured';
         fallbackChain.push('groq');
+        providerErrors.groq = errMsg;
       }
     } catch (err) {
-      console.warn('[AI ROUTER] Groq cloud call failed:', err instanceof Error ? err.message : err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn('[AI ROUTER] Groq cloud call failed:', errMsg);
       fallbackChain.push('groq');
+      providerErrors.groq = errMsg;
     }
 
     // All 3 providers failed or are unconfigured — return clean error signal
+    const details = Object.entries(providerErrors)
+      .map(([p, e]) => `${p}: ${e}`)
+      .join('; ');
     throw new Error(
-      `🤖 AI SIGNAL OFFLINE: All AI providers (Ollama, Gemini, Groq) are currently unavailable or unconfigured.`
+      `All configured AI providers failed. (${details || 'No active providers available'})`
     );
   }
 

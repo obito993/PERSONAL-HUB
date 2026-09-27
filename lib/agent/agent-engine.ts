@@ -133,6 +133,19 @@ async function markTaskFailed(
       ...(partialResult ? { resultSummary: partialResult } : {}),
     },
   });
+
+  // Ensure NO task step is left stuck in RUNNING or PENDING state
+  await prisma.agentTaskStep.updateMany({
+    where: {
+      taskId,
+      status: { in: ['RUNNING', 'PENDING'] },
+    },
+    data: {
+      status: 'FAILED',
+      resultText: reason,
+    },
+  });
+
   await logAudit(userId, taskId, 'TASK_FAILED', reason);
 }
 
@@ -143,12 +156,12 @@ async function markTaskFailed(
 function determineExecutionPlan(title: string, description: string): ExecutionPlan {
   const combined = `${title} ${description}`.toLowerCase().trim();
 
-  // ── Web Research triggers ──
+  // ── Web Research triggers: explicit web research / source fetching requests ──
   const researchTriggers = [
-    'research', 'find latest', 'current information', 'web search',
-    'sources', 'compare', 'interview topics', 'job requirements',
-    'fresher data analyst', 'market trends', 'news', 'find current',
-    'latest python', 'best beginner sql'
+    'web search', 'web research', 'search the web', 'search online',
+    'find sources', 'online sources', 'latest news', 'current news',
+    'current market', 'find current information', 'find current info',
+    'research the typical', 'research responsibilities', 'research data analyst'
   ];
   const requiresResearch = researchTriggers.some((t) => combined.includes(t));
 
@@ -659,10 +672,22 @@ export class AgentEngine {
 
     if (result === null) {
       console.warn(`[AGENT ENGINE] Task ${task.id} timed out after 50 seconds.`);
+      const plan = determineExecutionPlan(title, description);
+      let timeoutMsg: string;
+      if (plan.taskType === 'WEB_RESEARCH') {
+        timeoutMsg = 'WEB_RESEARCH_TIMEOUT: Web research task timed out after 50 seconds.';
+      } else if (plan.taskType === 'AI_GENERATION') {
+        timeoutMsg = 'AI_PROVIDER_TIMEOUT: Execution timed out after 50 seconds. AI provider cascade did not finish in time.';
+      } else if (plan.taskType === 'STUDY_DOCUMENT') {
+        timeoutMsg = 'TOOL_TIMEOUT: Study document query timed out after 50 seconds.';
+      } else {
+        timeoutMsg = 'TASK_EXECUTION_TIMEOUT: Task execution timed out after 50 seconds.';
+      }
+
       await markTaskFailed(
         task.id,
         userId,
-        'Web research or execution timed out after 50 seconds. Task marked FAILED.',
+        timeoutMsg,
         50
       );
     }
