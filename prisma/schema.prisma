@@ -33,6 +33,11 @@ model User {
   expenses          Expense[]
   studyDocs         StudyDocument[]
   studyProgress     StudyProgress[]
+  aiSettings        UserAISettings?
+  agentMemories     AgentMemory[]
+  agentTasks        AgentTask[]
+  agentAutomations  AgentAutomation[]
+  agentAuditLogs    AgentAuditLog[]
 }
 
 model UserSettings {
@@ -304,5 +309,97 @@ model StudyProgress {
 
   @@unique([userId, documentId, chapterId, mode], name: "user_doc_chapter_mode")
   @@index([userId, documentId])
+}
+
+model UserAISettings {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customName     String?  // Optional custom name for the AI agent (e.g. "Jarvis", "Nova")
+  personality    String   @default("helpful, precise, encouraging")
+  responseStyle  String   @default("detailed")
+  memoryEnabled  Boolean  @default(true)
+  approvalLevel  String   @default("SUPERVISED") // SUPERVISED | REVIEW | TRUSTED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model AgentMemory {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    String   @default("fact") // preference | project | fact | workflow
+  content     String
+  source      String   @default("conversation") // conversation | user_input | automated
+  importance  Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model AgentTask {
+  id            String          @id @default(uuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  description   String          @default("")
+  status        String          @default("PLANNING") // PLANNING | RUNNING | WAITING_FOR_APPROVAL | COMPLETED | FAILED
+  priority      String          @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  progress      Int             @default(0)
+  resultSummary String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  steps         AgentTaskStep[]
+  auditLogs     AgentAuditLog[]
+
+  @@index([userId])
+}
+
+model AgentTaskStep {
+  id          String    @id @default(uuid())
+  taskId      String
+  task        AgentTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  stepIndex   Int
+  title       String
+  status      String    @default("PENDING") // PENDING | RUNNING | WAITING_FOR_APPROVAL | COMPLETED | FAILED
+  resultText  String?
+  toolName    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([taskId])
+}
+
+model AgentAutomation {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  prompt    String
+  schedule  String    @default("daily") // daily | weekly | one-time
+  enabled   Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model AgentAuditLog {
+  id             String     @id @default(uuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId         String?
+  task           AgentTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  toolName       String
+  actionSummary  String
+  approvalStatus String     @default("APPROVED") // APPROVED | REJECTED | PENDING | AUTO_EXECUTED
+  detailsJson    String     @default("{}")
+  timestamp      DateTime   @default(now())
+
+  @@index([userId])
 }
 
