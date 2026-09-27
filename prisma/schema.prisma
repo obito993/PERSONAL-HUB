@@ -381,20 +381,23 @@ model AgentTaskStep {
 }
 
 model AgentAutomation {
-  id        String    @id @default(uuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title     String
-  prompt    String
-  schedule  String    @default("daily") // daily | weekly | one-time
-  enabled   Boolean   @default(true)
-  lastRunAt DateTime?
-  nextRunAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  prompt        String
+  schedule      String    @default("daily") // daily | weekly | one-time
+  enabled       Boolean   @default(true)
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  lastRunStatus String?   // COMPLETED | FAILED
+  lastRunResult String?   // Summary of last execution
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([userId])
 }
+
 
 model AgentAuditLog {
   id             String     @id @default(uuid())

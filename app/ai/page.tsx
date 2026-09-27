@@ -82,11 +82,19 @@ interface AgentTask {
 
 interface AgentAutomation {
   id: string;
+  userId?: string;
   title: string;
   prompt: string;
   schedule: string;
   enabled: boolean;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  lastRunStatus?: string | null;
+  lastRunResult?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
 
 interface AuditLogItem {
   id: string;
@@ -142,6 +150,10 @@ export default function AiPage() {
   const [autoTitle, setAutoTitle] = useState('');
   const [autoPrompt, setAutoPrompt] = useState('');
   const [autoSchedule, setAutoSchedule] = useState('daily');
+  const [autoToDelete, setAutoToDelete] = useState<AgentAutomation | null>(null);
+  const [deletingAutoId, setDeletingAutoId] = useState<string | null>(null);
+  const [autoFeedback, setAutoFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
 
   // Audit Logs State
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
@@ -434,27 +446,47 @@ export default function AiPage() {
 
   const handleToggleAutomation = async (id: string, currentEnabled: boolean) => {
     try {
-      await fetch('/api/agent/automations', {
+      const res = await fetch('/api/agent/automations', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, enabled: !currentEnabled })
       });
-      sound.playPop();
-      fetchAutomations();
+      if (res.ok) {
+        sound.playPop();
+        fetchAutomations();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to update automation.');
+      }
     } catch (err) {
       alert('Failed to update automation.');
     }
   };
 
-  const handleDeleteAutomation = async (id: string) => {
+  const confirmDeleteAutomation = async () => {
+    if (!autoToDelete || deletingAutoId) return;
+    const targetId = autoToDelete.id;
+    setDeletingAutoId(targetId);
+
     try {
-      await fetch(`/api/agent/automations?id=${id}`, { method: 'DELETE' });
-      sound.playPop();
-      fetchAutomations();
+      const res = await fetch(`/api/agent/automations?id=${targetId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setAutomations(prev => prev.filter(a => a.id !== targetId));
+        setAutoToDelete(null);
+        setAutoFeedback({ message: 'Automation deleted.', type: 'success' });
+        sound.playPop();
+        setTimeout(() => setAutoFeedback(null), 4000);
+      } else {
+        const data = await res.json();
+        setAutoFeedback({ message: data.error || 'Failed to delete automation.', type: 'error' });
+      }
     } catch (err) {
-      alert('Failed to delete automation.');
+      setAutoFeedback({ message: 'Failed to delete automation.', type: 'error' });
+    } finally {
+      setDeletingAutoId(null);
     }
   };
+
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1156,44 +1188,117 @@ export default function AiPage() {
           </div>
 
           <div className="lg:col-span-8 bg-white comic-border-lg p-6 shadow-comic space-y-4">
-            <h3 className="font-black text-lg uppercase pb-2 border-b-2 border-black">
-              ACTIVE AUTOMATED PROMPTS
-            </h3>
+            <div className="flex items-center justify-between pb-2 border-b-2 border-black">
+              <h3 className="font-black text-lg uppercase flex items-center gap-2">
+                <Zap className="w-5 h-5 text-purple-600" />
+                <span>SAVED AUTOMATED TASKS</span>
+              </h3>
+              <span className="bg-black text-white text-xs font-black px-2.5 py-0.5 rounded font-mono">
+                {automations.length} SAVED
+              </span>
+            </div>
+
+            {/* Notification Banner */}
+            {autoFeedback && (
+              <div
+                className={`comic-border-sm p-3 font-mono text-xs font-bold flex items-center justify-between gap-2 ${
+                  autoFeedback.type === 'success'
+                    ? 'bg-green-100 text-green-900 border-green-500'
+                    : 'bg-red-100 text-red-900 border-red-500'
+                }`}
+              >
+                <span>{autoFeedback.message}</span>
+                <button
+                  type="button"
+                  onClick={() => setAutoFeedback(null)}
+                  className="text-xs font-black uppercase text-gray-700 hover:text-black cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {automations.length === 0 ? (
-              <div className="text-center py-12 font-mono text-sm font-bold text-gray-500">
-                No automations created yet. Create scheduled prompts to let your agent run recurring tasks automatically.
+              <div className="bg-[#FFFDF5] comic-border-md p-10 text-center space-y-3 font-mono">
+                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto comic-border-sm">
+                  <Zap className="w-6 h-6 text-purple-600" />
+                </div>
+                <h4 className="font-black text-base uppercase text-black">NO AUTOMATIONS YET</h4>
+                <p className="font-sans text-xs font-bold text-gray-600 max-w-md mx-auto leading-relaxed">
+                  Create an automation and your Personal AI can run it according to your schedule.
+                </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {automations.map((a) => (
-                  <div key={a.id} className="bg-[#FFFDF5] comic-border-sm p-4 flex items-center justify-between gap-4 font-mono text-xs">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black font-sans text-sm text-black">{a.title}</span>
-                        <span className="bg-purple-200 text-black text-[9px] font-black px-2 py-0.5 rounded border border-black uppercase">
-                          {a.schedule}
-                        </span>
+                  <div key={a.id} className="bg-[#FFFDF5] comic-border-lg p-4 space-y-3 font-mono text-xs">
+                    {/* Header: Title + Schedule Badge + Status */}
+                    <div className="flex items-start justify-between gap-4 pb-2 border-b border-gray-300">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-black font-sans text-base text-black">{a.title}</span>
+                          <span className="bg-purple-200 text-black text-[9px] font-black px-2 py-0.5 rounded border border-black uppercase">
+                            {a.schedule}
+                          </span>
+                          <span
+                            className={`text-[9px] font-black px-2 py-0.5 rounded border border-black uppercase ${
+                              a.enabled ? 'bg-green-300 text-black' : 'bg-amber-200 text-amber-900'
+                            }`}
+                          >
+                            {a.enabled ? 'ACTIVE' : 'PAUSED'}
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-gray-700 font-sans text-xs">{a.prompt}</p>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAutomation(a.id, a.enabled)}
+                          className={`comic-border-sm px-3 py-1 font-black text-xs cursor-pointer transition-colors ${
+                            a.enabled
+                              ? 'bg-amber-300 hover:bg-amber-400 text-black'
+                              : 'bg-green-400 hover:bg-green-500 text-black'
+                          }`}
+                        >
+                          {a.enabled ? 'PAUSE' : 'RESUME'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setAutoToDelete(a)}
+                          className="bg-red-100 hover:bg-red-200 text-red-700 p-1.5 comic-border-sm transition-colors cursor-pointer"
+                          title="Delete Automation"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleToggleAutomation(a.id, a.enabled)}
-                        className={`comic-border-sm px-3 py-1 font-black text-xs cursor-pointer ${
-                          a.enabled ? 'bg-green-400 text-black' : 'bg-gray-300 text-black'
-                        }`}
-                      >
-                        {a.enabled ? 'ACTIVE' : 'DISABLED'}
-                      </button>
+                    {/* Instruction Prompt */}
+                    <div className="bg-white comic-border-sm p-3 font-sans text-xs font-bold text-gray-800 whitespace-pre-wrap leading-relaxed">
+                      <span className="font-mono text-[10px] font-black text-gray-500 block mb-1 uppercase">INSTRUCTIONS:</span>
+                      {a.prompt}
+                    </div>
 
-                      <button
-                        onClick={() => handleDeleteAutomation(a.id)}
-                        className="text-red-600 p-1.5 comic-border-sm hover:bg-red-50 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    {/* Metadata Details Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px] text-gray-600 border-t border-dashed border-gray-200">
+                      <div>
+                        <span className="font-bold text-gray-900">Created: </span>
+                        {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : 'N/A'}
+                      </div>
+                      <div>
+                        <span className="font-bold text-gray-900">Next Run: </span>
+                        {a.nextRunAt ? new Date(a.nextRunAt).toLocaleString() : (a.enabled ? 'Scheduled' : 'Paused')}
+                      </div>
+                      <div>
+                        <span className="font-bold text-gray-900">Last Run: </span>
+                        {a.lastRunAt ? new Date(a.lastRunAt).toLocaleString() : 'Never'}
+                        {a.lastRunStatus && (
+                          <span className={`ml-1 font-black text-[9px] px-1 rounded ${a.lastRunStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {a.lastRunStatus}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1202,6 +1307,54 @@ export default function AiPage() {
           </div>
         </div>
       )}
+
+      {/* DELETE AUTOMATION CONFIRMATION MODAL */}
+      {autoToDelete && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in font-sans">
+          <div className="bg-white comic-border-lg p-6 max-w-md w-full shadow-comic space-y-4 font-mono">
+            <div className="flex items-center gap-3 border-b-2 border-black pb-3">
+              <div className="bg-red-100 comic-border-sm p-2 text-red-600">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-black text-base text-black uppercase">Delete this automation?</h3>
+                <p className="text-[11px] font-bold text-gray-500 truncate max-w-[260px]">{autoToDelete.title}</p>
+              </div>
+            </div>
+
+            <p className="font-sans text-xs font-bold text-gray-700 leading-relaxed bg-[#FFFDF5] comic-border-sm p-3">
+              Are you sure you want to delete this automation? Scheduled executions will stop and this automation will no longer run.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAutoToDelete(null)}
+                disabled={!!deletingAutoId}
+                className="btn-comic btn-comic-white px-4 py-2 font-black text-xs uppercase cursor-pointer disabled:opacity-50"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteAutomation}
+                disabled={!!deletingAutoId}
+                className="btn-comic bg-red-500 hover:bg-red-600 text-white px-4 py-2 font-black text-xs uppercase cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                {deletingAutoId ? (
+                  <span>DELETING...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>DELETE AUTOMATION</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* TAB 5: AUDIT LOG */}
       {activeTab === 'audit' && (
