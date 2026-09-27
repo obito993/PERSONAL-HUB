@@ -68,8 +68,16 @@ interface AgentTask {
   priority: string;
   progress: number;
   resultSummary?: string;
+  providerUsed?: string;
+  modelUsed?: string;
+  fallbackChain?: string;
+  executionPlanJson?: string;
+  validationPassed?: boolean;
+  validationNotes?: string;
+  errorMessage?: string;
+  durationMs?: number;
   createdAt: string;
-  steps: { id: string; stepIndex: number; title: string; status: string; resultText?: string }[];
+  steps: { id: string; stepIndex: number; title: string; status: string; resultText?: string; toolName?: string }[];
 }
 
 interface AgentAutomation {
@@ -936,67 +944,160 @@ export default function AiPage() {
               <ListTodo className="w-6 h-6 text-[#FF5A5F]" />
               <span>LAUNCH AUTONOMOUS AGENT TASK</span>
             </h3>
+            <p className="font-mono text-xs text-gray-600 font-bold">
+              Describe any task. The agent will dynamically plan, select tools if needed, call the AI provider cascade, validate the result, and persist it.
+            </p>
 
-            <form onSubmit={handleCreateTask} className="grid grid-cols-1 md:grid-cols-12 gap-3">
-              <input
-                type="text"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                placeholder="Task title (e.g. Audit Study PDFs and prepare a week revision plan)"
-                className="comic-input md:col-span-5 text-xs font-bold"
-              />
-              <input
-                type="text"
+            <form onSubmit={handleCreateTask} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                <input
+                  type="text"
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  placeholder="Task title (e.g. Create a 3-step SQL JOIN learning plan)"
+                  className="comic-input md:col-span-10 text-xs font-bold"
+                />
+                <button
+                  type="submit"
+                  disabled={creatingTask}
+                  className="btn-comic btn-comic-red md:col-span-2 text-xs font-black uppercase py-2 cursor-pointer"
+                >
+                  {creatingTask ? 'RUNNING...' : 'LAUNCH TASK'}
+                </button>
+              </div>
+              <textarea
                 value={newTaskDesc}
                 onChange={(e) => setNewTaskDesc(e.target.value)}
-                placeholder="Optional task instructions..."
-                className="comic-input md:col-span-5 text-xs font-bold"
+                placeholder="Optional: detailed instructions, requirements, expected output format..."
+                className="comic-input w-full h-20 font-bold text-xs"
               />
-              <button
-                type="submit"
-                disabled={creatingTask}
-                className="btn-comic btn-comic-red md:col-span-2 text-xs font-black uppercase py-2 cursor-pointer"
-              >
-                {creatingTask ? 'RUNNING...' : 'LAUNCH TASK'}
-              </button>
             </form>
           </div>
 
-          <div className="space-y-4">
-            {agentTasks.map((t) => (
-              <div key={t.id} className="bg-white comic-border-lg p-5 shadow-comic space-y-3 font-mono text-xs">
-                <div className="flex items-center justify-between pb-2 border-b-2 border-black">
-                  <div className="flex items-center gap-2">
-                    <span className="font-black font-sans text-base text-black">{t.title}</span>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded border border-black ${
-                      t.status === 'COMPLETED' ? 'bg-green-300' : 'bg-yellow-300'
-                    }`}>
-                      {t.status}
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-bold text-gray-500">
-                    {new Date(t.createdAt).toLocaleTimeString()}
-                  </span>
-                </div>
+          {agentTasks.length === 0 ? (
+            <div className="text-center py-12 font-mono text-sm font-bold text-gray-500">
+              No tasks launched yet. Create your first autonomous task above.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {agentTasks.map((t) => {
+                const statusColor =
+                  t.status === 'COMPLETED'
+                    ? 'bg-green-300'
+                    : t.status === 'FAILED' || t.status === 'BLOCKED'
+                    ? 'bg-red-300'
+                    : t.status === 'VALIDATING'
+                    ? 'bg-purple-200'
+                    : 'bg-yellow-300';
 
-                {t.resultSummary && (
-                  <div className="bg-[#FFFDF5] comic-border-sm p-3 font-sans text-xs font-bold text-gray-800">
-                    ⚡ Outcome: {t.resultSummary}
-                  </div>
-                )}
+                const providerBadge =
+                  t.providerUsed === 'ollama'
+                    ? '🦙 OLLAMA'
+                    : t.providerUsed === 'gemini'
+                    ? '✨ GEMINI'
+                    : t.providerUsed === 'groq'
+                    ? '⚡ GROQ'
+                    : null;
 
-                <div className="space-y-1">
-                  <span className="font-black text-[10px] text-gray-600 uppercase">EXECUTION STEPS:</span>
-                  {t.steps.map((s) => (
-                    <div key={s.id} className="bg-gray-50 comic-border-sm p-2 flex items-center justify-between">
-                      <span>Step {s.stepIndex}: {s.title}</span>
-                      <span className="font-bold text-green-700">{s.resultText || s.status}</span>
+                return (
+                  <div key={t.id} className="bg-white comic-border-lg p-5 shadow-comic space-y-4 font-mono text-xs">
+                    {/* Header row */}
+                    <div className="flex items-start justify-between pb-2 border-b-2 border-black gap-4">
+                      <div className="space-y-1">
+                        <span className="font-black font-sans text-base text-black block">{t.title}</span>
+                        {t.description && (
+                          <span className="text-gray-600 font-sans text-xs">{t.description}</span>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded border border-black ${statusColor}`}>
+                          {t.status}
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          {new Date(t.createdAt).toLocaleTimeString()}
+                          {t.durationMs ? ` • ${(t.durationMs / 1000).toFixed(1)}s` : ''}
+                        </span>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+
+                    {/* Provider / Model row */}
+                    {t.providerUsed && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="bg-black text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
+                          {providerBadge || t.providerUsed}
+                        </span>
+                        <span className="text-[11px] font-bold text-gray-600 font-sans">
+                          Model: {t.modelUsed}
+                        </span>
+                        {t.fallbackChain && JSON.parse(t.fallbackChain).length > 0 && (
+                          <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded border border-amber-400">
+                            FALLBACK: tried {JSON.parse(t.fallbackChain).join(' → ')} first
+                          </span>
+                        )}
+                        {t.validationPassed === true && (
+                          <span className="bg-green-100 text-green-800 text-[10px] font-black px-2 py-0.5 rounded border border-green-400">
+                            ✓ VALIDATED
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Error message */}
+                    {(t.status === 'FAILED' || t.status === 'BLOCKED') && t.errorMessage && (
+                      <div className="bg-red-50 comic-border-sm p-3 text-red-800 font-sans text-xs font-bold">
+                        ❌ FAILURE: {t.errorMessage}
+                      </div>
+                    )}
+
+                    {/* Actual AI result */}
+                    {t.resultSummary && (
+                      <div className="space-y-1">
+                        <span className="font-black text-[10px] uppercase text-gray-600">
+                          {t.status === 'COMPLETED' ? '✅ TASK RESULT:' : '⚡ PARTIAL RESULT:'}
+                        </span>
+                        <div className="bg-[#FFFDF5] comic-border-sm p-3 font-sans text-sm font-bold text-gray-900 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                          {t.resultSummary}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Execution steps */}
+                    <div className="space-y-1.5">
+                      <span className="font-black text-[10px] text-gray-500 uppercase">EXECUTION STEPS:</span>
+                      {t.steps.map((s) => {
+                        const stepStatusColor =
+                          s.status === 'COMPLETED'
+                            ? 'text-green-700'
+                            : s.status === 'FAILED'
+                            ? 'text-red-600'
+                            : 'text-gray-500';
+                        return (
+                          <div key={s.id} className="bg-gray-50 comic-border-sm p-2.5 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-black">
+                                Step {s.stepIndex}: {s.title}
+                              </span>
+                              <span className={`font-black text-[10px] ${stepStatusColor}`}>{s.status}</span>
+                            </div>
+                            {s.resultText && (
+                              <p className="text-gray-700 font-sans text-[11px] leading-relaxed whitespace-pre-wrap">
+                                {s.resultText}
+                              </p>
+                            )}
+                            {s.toolName && (
+                              <span className="bg-blue-100 text-blue-800 text-[9px] font-black px-1.5 py-0.5 rounded">
+                                TOOL: {s.toolName}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

@@ -339,17 +339,25 @@ model AgentMemory {
 }
 
 model AgentTask {
-  id            String          @id @default(uuid())
-  userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title         String
-  description   String          @default("")
-  status        String          @default("PLANNING") // PLANNING | RUNNING | WAITING_FOR_APPROVAL | COMPLETED | FAILED
-  priority      String          @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
-  progress      Int             @default(0)
-  resultSummary String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                String          @id @default(uuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title             String
+  description       String          @default("")
+  status            String          @default("PLANNING") // PLANNING | QUEUED | RUNNING | WAITING_FOR_APPROVAL | VALIDATING | COMPLETED | FAILED | BLOCKED
+  priority          String          @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  progress          Int             @default(0)
+  resultSummary     String?         // The actual AI-generated result content
+  providerUsed      String?         // ollama | gemini | groq
+  modelUsed         String?         // actual model name
+  fallbackChain     String?         // JSON array of providers tried before success
+  executionPlanJson String?         // JSON: task type, tools selected, rationale
+  validationPassed  Boolean?        // Was the result validated?
+  validationNotes   String?         // Validation details
+  errorMessage      String?         // Failure reason if FAILED
+  durationMs        Int?            // Execution time in milliseconds
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   steps         AgentTaskStep[]
   auditLogs     AgentAuditLog[]
